@@ -26,6 +26,12 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000`.
 
+## Recording Google Meet
+
+Use the `Meet tab + mic` capture source before pressing `Start`. When the browser picker opens, select the Google Meet tab/window and enable audio sharing. The app mixes that meeting audio with your microphone and sends the combined recording for Sarvam transcription.
+
+Browser security does not allow a web app to silently listen to another tab, so this share step is required.
+
 ## Notes
 
 - v1 processes audio after recording stops because speaker diarization is handled through Sarvam Batch Speech-to-Text with `saaras:v3`.

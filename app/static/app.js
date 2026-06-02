@@ -2,7 +2,11 @@ let recorder;
 let chunks = [];
 let meetingId = null;
 let pollTimer = null;
+let activeStreams = [];
+let activeAudioContext = null;
 
+const captureMode = document.querySelector("#captureMode");
+const speakerCount = document.querySelector("#speakerCount");
 const startBtn = document.querySelector("#startBtn");
 const stopBtn = document.querySelector("#stopBtn");
 const momBtn = document.querySelector("#momBtn");
@@ -19,21 +23,32 @@ momBtn.addEventListener("click", generateMom);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 
 async function startRecording() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  chunks = [];
-  recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-  recorder.onstop = () => {
-    stream.getTracks().forEach((track) => track.stop());
-    uploadRecording();
-  };
-  recorder.start();
-  setStatus("Recording...");
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  momBtn.disabled = true;
+  try {
+    const stream = captureMode.value === "meeting" ? await createMeetingCaptureStream() : await createMicrophoneStream();
+    chunks = [];
+    recorder = new MediaRecorder(stream, getRecorderOptions());
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      stopActiveCapture();
+      uploadRecording();
+    };
+    recorder.start();
+    setStatus("Recording...");
+    captureMode.disabled = true;
+    speakerCount.disabled = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    momBtn.disabled = true;
+  } catch (error) {
+    stopActiveCapture();
+    setStatus(error.message || "Could not start recording");
+    captureMode.disabled = false;
+    speakerCount.disabled = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
 }
 
 function stopRecording() {
@@ -46,8 +61,19 @@ function stopRecording() {
 
 async function uploadRecording() {
   const blob = new Blob(chunks, { type: "audio/webm" });
+  captureMode.disabled = false;
+  speakerCount.disabled = false;
+  if (!blob.size) {
+    setStatus("No audio was recorded");
+    startBtn.disabled = false;
+    return;
+  }
   const form = new FormData();
   form.append("audio", blob, "meeting.webm");
+  const expectedSpeakers = Number(speakerCount.value);
+  if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
+    form.append("num_speakers", String(expectedSpeakers));
+  }
 
   const response = await fetch("/api/meetings/audio", { method: "POST", body: form });
   if (!response.ok) {
@@ -83,6 +109,8 @@ function renderState(data) {
     exportLinks.innerHTML = `<a href="/api/meetings/${data.id}/export.md">Markdown</a><a href="/api/meetings/${data.id}/export.pdf">PDF</a>`;
   }
   startBtn.disabled = data.status === "transcribing" || data.status === "generating";
+  captureMode.disabled = startBtn.disabled;
+  speakerCount.disabled = startBtn.disabled;
   momBtn.disabled = !data.transcript || data.transcript.length === 0 || data.status === "transcribing" || data.status === "generating";
   saveSpeakersBtn.disabled = !data.transcript || data.transcript.length === 0;
 }
@@ -137,6 +165,60 @@ async function generateMom() {
 
 function setStatus(text) {
   statusText.textContent = text;
+}
+
+async function createMicrophoneStream() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  activeStreams = [stream];
+  return stream;
+}
+
+async function createMeetingCaptureStream() {
+  const displayStream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: true,
+  });
+  const displayAudioTracks = displayStream.getAudioTracks();
+  if (!displayAudioTracks.length) {
+    displayStream.getTracks().forEach((track) => track.stop());
+    throw new Error("No meeting audio was shared");
+  }
+
+  const micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  activeAudioContext = new AudioContextClass();
+  const destination = activeAudioContext.createMediaStreamDestination();
+  activeAudioContext.createMediaStreamSource(new MediaStream(displayAudioTracks)).connect(destination);
+  activeAudioContext.createMediaStreamSource(micStream).connect(destination);
+
+  activeStreams = [displayStream, micStream, destination.stream];
+  displayStream.getTracks().forEach((track) => {
+    track.onended = () => {
+      if (recorder && recorder.state !== "inactive") stopRecording();
+    };
+  });
+
+  return destination.stream;
+}
+
+function stopActiveCapture() {
+  activeStreams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
+  activeStreams = [];
+  if (activeAudioContext) {
+    activeAudioContext.close();
+    activeAudioContext = null;
+  }
+}
+
+function getRecorderOptions() {
+  const preferredTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type));
+  return mimeType ? { mimeType } : {};
 }
 
 function escapeHtml(value) {

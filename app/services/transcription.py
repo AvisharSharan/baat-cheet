@@ -19,21 +19,25 @@ class SarvamTranscriptionClient:
         if not self.api_key:
             raise TranscriptionError("SARVAM_API_KEY is not configured.")
 
-    async def transcribe(self, audio_path: str) -> List[SpeakerTurn]:
-        return await asyncio.to_thread(self._transcribe_sync, audio_path)
+    async def transcribe(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
+        return await asyncio.to_thread(self._transcribe_sync, audio_path, num_speakers)
 
-    def _transcribe_sync(self, audio_path: str) -> List[SpeakerTurn]:
+    def _transcribe_sync(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
         try:
             from sarvamai import SarvamAI
         except ImportError as exc:
             raise TranscriptionError("sarvamai package is not installed.") from exc
 
         client = SarvamAI(api_subscription_key=self.api_key)
-        job = client.speech_to_text_job.create_job(
-            language_code="unknown",
-            model="saaras:v3",
-            with_diarization=True,
-        )
+        job_options = {
+            "language_code": "unknown",
+            "mode": "transcribe",
+            "model": "saaras:v3",
+            "with_diarization": True,
+        }
+        if num_speakers is not None:
+            job_options["num_speakers"] = num_speakers
+        job = client.speech_to_text_job.create_job(**job_options)
         job.upload_files(file_paths=[audio_path])
         job.start()
         job.wait_until_complete()
@@ -55,23 +59,22 @@ class SarvamTranscriptionClient:
 def normalize_sarvam_output(payload: Any) -> List[SpeakerTurn]:
     records = _flatten_records(payload)
     turns: List[SpeakerTurn] = []
+    speaker_aliases: Dict[str, str] = {}
 
     for record in records:
         text = _first_string(record, ("transcript", "text", "sentence", "utterance"))
         if not text:
             continue
-        speaker = _first_string(record, ("speaker", "speaker_id", "speaker_label", "diarized_speaker"))
+        speaker = _speaker_label(record, speaker_aliases)
         if not speaker:
             speaker = "Speaker 1"
-        if not speaker.lower().startswith("speaker"):
-            speaker = f"Speaker {speaker}"
 
         turns.append(
             SpeakerTurn(
                 speaker=speaker,
                 text=text.strip(),
-                start_ms=_first_int(record, ("start_ms", "start_time_ms", "start")),
-                end_ms=_first_int(record, ("end_ms", "end_time_ms", "end")),
+                start_ms=_timestamp_ms(record, ("start_ms", "start_time_ms", "start_time_seconds", "start")),
+                end_ms=_timestamp_ms(record, ("end_ms", "end_time_ms", "end_time_seconds", "end")),
             )
         )
 
@@ -110,6 +113,41 @@ def _first_string(record: Dict[str, Any], keys: Iterable[str]) -> str | None:
             return value.strip()
         if value is not None and key.startswith("speaker"):
             return str(value).strip()
+    return None
+
+
+def _speaker_label(record: Dict[str, Any], speaker_aliases: Dict[str, str]) -> str | None:
+    value = _first_string(record, ("speaker", "speaker_id", "speaker_label", "diarized_speaker"))
+    if value is None:
+        return None
+    if value.lower().startswith("speaker"):
+        return value
+    if value not in speaker_aliases:
+        speaker_aliases[value] = f"Speaker {len(speaker_aliases) + 1}"
+    return speaker_aliases[value]
+
+
+def _timestamp_ms(record: Dict[str, Any], keys: Iterable[str]) -> int | None:
+    for key in keys:
+        value = _first_number(record.get(key))
+        if value is None:
+            continue
+        if key.endswith("_seconds") or key in {"start", "end"} and value < 1000:
+            return int(value * 1000)
+        return int(value)
+    return None
+
+
+def _first_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
     return None
 
 

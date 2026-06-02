@@ -26,6 +26,7 @@ class MeetingState(BaseModel):
     id: str
     status: MeetingStatus
     audio_path: Optional[str] = None
+    num_speakers: Optional[int] = None
     error: Optional[str] = None
     transcript: List[SpeakerTurn] = Field(default_factory=list)
     speaker_names: Dict[str, str] = Field(default_factory=dict)

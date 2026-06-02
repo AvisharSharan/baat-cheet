@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -36,7 +36,14 @@ async def index() -> FileResponse:
 
 
 @app.post("/api/meetings/audio", response_model=MeetingCreateResponse)
-async def upload_audio(background_tasks: BackgroundTasks, audio: UploadFile = File(...)) -> MeetingCreateResponse:
+async def upload_audio(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    num_speakers: int | None = Form(default=None),
+) -> MeetingCreateResponse:
+    if num_speakers is not None and not 1 <= num_speakers <= 10:
+        raise HTTPException(status_code=422, detail="num_speakers must be between 1 and 10.")
+
     meeting_id = uuid4().hex
     suffix = Path(audio.filename or "meeting.webm").suffix or ".webm"
     audio_path = TEMP_DIR / f"{meeting_id}{suffix}"
@@ -44,7 +51,12 @@ async def upload_audio(background_tasks: BackgroundTasks, audio: UploadFile = Fi
     with audio_path.open("wb") as target:
         shutil.copyfileobj(audio.file, target)
 
-    meeting = MeetingState(id=meeting_id, status=MeetingStatus.UPLOADED, audio_path=str(audio_path))
+    meeting = MeetingState(
+        id=meeting_id,
+        status=MeetingStatus.UPLOADED,
+        audio_path=str(audio_path),
+        num_speakers=num_speakers,
+    )
     store.add(meeting)
     background_tasks.add_task(transcribe_meeting, meeting_id)
     return MeetingCreateResponse(id=meeting.id, status=meeting.status)
@@ -113,7 +125,10 @@ async def transcribe_meeting(meeting_id: str) -> None:
     store.update(meeting)
 
     try:
-        meeting.transcript = await SarvamTranscriptionClient().transcribe(meeting.audio_path or "")
+        meeting.transcript = await SarvamTranscriptionClient().transcribe(
+            meeting.audio_path or "",
+            num_speakers=meeting.num_speakers,
+        )
         speakers = sorted({turn.speaker for turn in meeting.transcript})
         meeting.speaker_names = {speaker: speaker for speaker in speakers}
         meeting.status = MeetingStatus.TRANSCRIBED
