@@ -6,6 +6,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+app/__pycache__
 
 # Test and tooling caches
 .pytest_cache/
