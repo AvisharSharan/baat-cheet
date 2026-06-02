@@ -42,6 +42,15 @@ class SarvamTranscriptionClient:
         job.start()
         job.wait_until_complete()
 
+        file_results = job.get_file_results()
+        failed = file_results.get("failed", [])
+        successful = file_results.get("successful", [])
+        if failed and not successful:
+            errors = "; ".join(f"{item.get('file_name', 'audio')}: {item.get('error_message', 'unknown error')}" for item in failed)
+            raise TranscriptionError(f"Sarvam batch transcription failed: {errors}")
+        if not successful:
+            raise TranscriptionError("Sarvam batch transcription completed without successful file results.")
+
         output_dir = Path(audio_path).with_suffix("")
         output_dir = output_dir.parent / f"{output_dir.name}_sarvam"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -86,6 +95,10 @@ def normalize_sarvam_output(payload: Any) -> List[SpeakerTurn]:
 
 def _flatten_records(value: Any) -> List[Dict[str, Any]]:
     if isinstance(value, dict):
+        diarized = value.get("diarized_transcript")
+        if isinstance(diarized, dict) and isinstance(diarized.get("entries"), list):
+            return _flatten_records(diarized["entries"])
+
         for key in ("diarized_transcript", "speaker_transcript", "transcript", "utterances", "segments", "results"):
             child = value.get(key)
             if isinstance(child, list):
