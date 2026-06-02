@@ -1,0 +1,168 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f7f8;
+  color: #16201c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  border: 1px solid #a7b5ad;
+  background: #ffffff;
+  color: #16201c;
+  border-radius: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button:not(:disabled):hover {
+  border-color: #227a5d;
+}
+
+.shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0 22px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 17px;
+}
+
+#statusText {
+  margin-top: 6px;
+  color: #596860;
+}
+
+.actions,
+.panelHead,
+.exportLinks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.panel {
+  min-height: 70vh;
+  background: #ffffff;
+  border: 1px solid #d6ded9;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panelHead {
+  justify-content: space-between;
+  min-height: 42px;
+}
+
+.speakerEditor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.speakerEditor label {
+  display: grid;
+  gap: 5px;
+  color: #596860;
+  font-size: 13px;
+}
+
+.speakerEditor input {
+  min-height: 36px;
+  border: 1px solid #c6d1ca;
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.transcript,
+.mom {
+  border-top: 1px solid #e6ebe8;
+  padding-top: 12px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.turn {
+  padding: 10px 0;
+  border-bottom: 1px solid #edf1ef;
+}
+
+.speaker {
+  font-weight: 700;
+  color: #227a5d;
+}
+
+.mom {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  overflow: auto;
+}
+
+.empty {
+  color: #6d7b73;
+}
+
+.exportLinks a {
+  color: #2262a8;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+@media (max-width: 820px) {
+  .toolbar,
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actions button {
+    flex: 1;
+  }
+}

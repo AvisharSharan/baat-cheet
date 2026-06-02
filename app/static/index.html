@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minutes of Meeting</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="toolbar">
+        <div>
+          <h1>Minutes of Meeting</h1>
+          <p id="statusText">Ready to record</p>
+        </div>
+        <div class="actions">
+          <button id="startBtn" type="button">Start</button>
+          <button id="stopBtn" type="button" disabled>Stop</button>
+          <button id="momBtn" type="button" disabled>Generate MoM</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panelHead">
+            <h2>Transcript</h2>
+            <button id="saveSpeakersBtn" type="button" disabled>Save Speakers</button>
+          </div>
+          <div id="speakerEditor" class="speakerEditor"></div>
+          <div id="transcript" class="transcript empty">No transcript yet.</div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <h2>MoM</h2>
+            <div class="exportLinks" id="exportLinks"></div>
+          </div>
+          <pre id="momOutput" class="mom empty">No MoM generated yet.</pre>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
