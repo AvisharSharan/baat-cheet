@@ -16,6 +16,8 @@ const transcriptEl = document.querySelector("#transcript");
 const speakerEditor = document.querySelector("#speakerEditor");
 const momOutput = document.querySelector("#momOutput");
 const exportLinks = document.querySelector("#exportLinks");
+const speakerMetric = document.querySelector("#speakerMetric");
+const turnMetric = document.querySelector("#turnMetric");
 
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
@@ -118,12 +120,14 @@ function renderState(data) {
 function renderTranscript(transcript, speakerNames) {
   if (!transcript.length) {
     transcriptEl.className = "transcript empty";
-    transcriptEl.textContent = "No transcript yet.";
+    transcriptEl.innerHTML = "<strong>No transcript yet</strong><span>Start a recording and stop it when the meeting ends.</span>";
     speakerEditor.innerHTML = "";
+    updateMetrics([]);
     return;
   }
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
+  updateMetrics(transcript);
   speakerEditor.innerHTML = speakers
     .map((speaker) => {
       const value = speakerNames[speaker] || speaker;
@@ -138,6 +142,12 @@ function renderTranscript(transcript, speakerNames) {
       return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><br />${escapeHtml(turn.text)}</div>`;
     })
     .join("");
+}
+
+function updateMetrics(transcript) {
+  const speakers = new Set(transcript.map((turn) => turn.speaker));
+  speakerMetric.textContent = String(speakers.size);
+  turnMetric.textContent = String(transcript.length);
 }
 
 async function saveSpeakers() {
@@ -157,7 +167,7 @@ async function saveSpeakers() {
 async function generateMom() {
   if (!meetingId) return;
   await saveSpeakers();
-  setStatus("Generating MoM...");
+  setStatus("Generating notes...");
   momBtn.disabled = true;
   const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
   renderState(await response.json());
