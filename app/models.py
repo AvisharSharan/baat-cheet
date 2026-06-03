@@ -49,3 +49,18 @@ class MeetingStatusResponse(BaseModel):
     transcript: List[SpeakerTurn] = Field(default_factory=list)
     speaker_names: Dict[str, str] = Field(default_factory=dict)
     mom_markdown: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_state(cls, state: "MeetingState") -> "MeetingStatusResponse":
+        """Construct a response from internal state, explicitly excluding
+        server-only fields like audio_path and num_speakers."""
+        return cls(
+            id=state.id,
+            status=state.status,
+            error=state.error,
+            transcript=state.transcript,
+            speaker_names=state.speaker_names,
+            mom_markdown=state.mom_markdown,
+        )

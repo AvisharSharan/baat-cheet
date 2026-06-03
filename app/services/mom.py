@@ -63,8 +63,8 @@ class HuggingFaceGemmaMomClient:
                 if response.status_code not in {502, 503, 504}:
                     return response
                 last_response = response
-                if attempt < self.retries:
-                    await asyncio.sleep(2 * (attempt + 1))
+                if attempt < self.retries:  # only sleep between attempts, not after the last one
+                    await asyncio.sleep(2 ** (attempt + 1))
         return last_response
 
 
@@ -77,7 +77,7 @@ If an owner or due date is not stated, write "Not specified" instead of inventin
 
 def build_mom_prompt(transcript: List[SpeakerTurn], speaker_names: Dict[str, str]) -> str:
     lines = []
-    for turn in sorted(transcript, key=lambda item: (item.start_ms is None, item.start_ms or 0)):
+    for turn in sorted(transcript, key=lambda item: (item.start_ms is None, item.start_ms if item.start_ms is not None else 0)):
         speaker = speaker_names.get(turn.speaker, turn.speaker)
         lines.append(f"{speaker}: {turn.text}")
 

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
 from .services.mom import HuggingFaceGemmaMomClient
-from .services.transcription import LocalWhisperTranscriptionClient
+from .services.transcription import SarvamTranscriptionClient
 from .storage import MeetingStore, delete_temp_file
 
 load_dotenv()
@@ -65,15 +65,21 @@ async def upload_audio(
 @app.get("/api/meetings/{meeting_id}/status", response_model=MeetingStatusResponse)
 async def get_status(meeting_id: str) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
-    return MeetingStatusResponse(**meeting.model_dump())
+    return MeetingStatusResponse.from_state(meeting)
 
 
 @app.patch("/api/meetings/{meeting_id}/speakers", response_model=MeetingStatusResponse)
 async def update_speakers(meeting_id: str, update: SpeakerUpdate) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
-    meeting.speaker_names = {key: value.strip() for key, value in update.speakers.items() if value.strip()}
+    blank_keys = [key for key, value in update.speakers.items() if not value.strip()]
+    if blank_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Speaker label(s) must not be blank: {', '.join(blank_keys)}",
+        )
+    meeting.speaker_names.update({key: value.strip() for key, value in update.speakers.items()})
     store.update(meeting)
-    return MeetingStatusResponse(**meeting.model_dump())
+    return MeetingStatusResponse.from_state(meeting)
 
 
 @app.post("/api/meetings/{meeting_id}/mom", response_model=MeetingStatusResponse)
@@ -89,11 +95,12 @@ async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
     try:
         meeting.mom_markdown = await HuggingFaceGemmaMomClient().generate(meeting.transcript, meeting.speaker_names)
         meeting.status = MeetingStatus.READY
+        meeting.error = None
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.error = str(exc)
     store.update(meeting)
-    return MeetingStatusResponse(**meeting.model_dump())
+    return MeetingStatusResponse.from_state(meeting)
 
 
 @app.get("/api/meetings/{meeting_id}/export.md")
@@ -125,7 +132,7 @@ async def transcribe_meeting(meeting_id: str) -> None:
     store.update(meeting)
 
     try:
-        meeting.transcript = await LocalWhisperTranscriptionClient().transcribe(
+        meeting.transcript = await SarvamTranscriptionClient().transcribe(
             meeting.audio_path or "",
             num_speakers=meeting.num_speakers,
         )

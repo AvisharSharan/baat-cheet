@@ -1,16 +1,16 @@
 # Minutes of Meeting Tool
 
-An open-source meeting-notes app for recording conversations, transcribing audio with a self-hosted Whisper model, and generating structured minutes with Hugging Face Gemma.
+Browser-based meeting recording with Sarvam transcription and Hugging Face Gemma minutes generation.
 
 ## Features
 
-- Browser-based meeting recording
-- Google Meet tab audio plus microphone capture
-- Local Whisper transcription through `faster-whisper`
-- Structured MoM generation with Hugging Face Gemma
-- Markdown and PDF exports
-- Temporary audio handling with cleanup after transcription
-- Simple FastAPI backend and static frontend
+- Record meeting tab audio plus microphone, or microphone only
+- Upload the completed recording for Sarvam batch transcription with diarization
+- Review speaker-wise transcript turns and rename speaker labels
+- Generate structured Minutes of Meeting with Hugging Face Gemma
+- Export generated notes as Markdown or PDF
+- Temporary audio cleanup after transcription
+- FastAPI backend with a static frontend
 
 ## Current Flow
 
@@ -21,10 +21,10 @@ Browser recording
 FastAPI upload endpoint
       |
       v
-Local faster-whisper transcription
+Sarvam batch transcription + diarization
       |
       v
-Transcript review
+Transcript review and speaker labels
       |
       v
 Hugging Face Gemma MoM generation
@@ -32,39 +32,6 @@ Hugging Face Gemma MoM generation
       v
 Markdown / PDF export
 ```
-
-## Target Live Stack
-
-The next architecture should move from post-meeting upload to live transcription:
-
-```text
-Browser AudioWorklet / MediaRecorder chunks
-      |
-      v
-FastAPI WebSocket
-      |
-      v
-Silero VAD + faster-whisper streaming worker
-      |
-      v
-Live transcript events in browser
-      |
-      v
-Final transcript accumulated in meeting state
-      |
-      v
-Hugging Face Gemma MoM generation
-```
-
-Recommended stack:
-
-- **Frontend streaming:** `AudioWorklet` for PCM chunks, or short `MediaRecorder` WebM chunks for an easier first version
-- **Backend:** FastAPI WebSocket endpoint
-- **Self-hosted ASR:** `faster-whisper`, starting with `small` or `medium`
-- **Voice activity detection:** Silero VAD, or faster-whisper's built-in VAD for the first pass
-- **Live transcript state:** in-memory per meeting initially; Redis if multiple workers/sessions are needed
-- **MoM generation:** Hugging Face OpenAI-compatible router with `google/gemma-4-31B-it`
-- **Speaker diarization:** defer for v1; add local pyannote or Diart after live ASR is stable
 
 ## Setup
 
@@ -79,24 +46,14 @@ python -m pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```env
+SARVAM_API_KEY=your_sarvam_api_key
+
 HF_TOKEN=your_hugging_face_token
 HF_MOM_MODEL=google/gemma-3-27b-it
 HF_CHAT_BASE_URL=https://router.huggingface.co/v1
 HF_MOM_MAX_TOKENS=1200
 HF_MOM_TIMEOUT_S=240
 HF_MOM_RETRIES=2
-
-LOCAL_WHISPER_MODEL=small
-LOCAL_WHISPER_DEVICE=auto
-LOCAL_WHISPER_COMPUTE_TYPE=int8
-```
-
-For better GPU quality/speed on a CUDA setup, try:
-
-```env
-LOCAL_WHISPER_MODEL=medium
-LOCAL_WHISPER_DEVICE=cuda
-LOCAL_WHISPER_COMPUTE_TYPE=float16
 ```
 
 Run the app:
@@ -113,10 +70,10 @@ http://127.0.0.1:8000
 
 ## Notes
 
-- The current implementation still uses post-recording upload while the backend is being simplified away from vendor STT.
-- Live transcription should be built as a WebSocket flow rather than polling the existing upload endpoint.
-- Speaker labels are currently `Speaker 1` because local Whisper does not perform diarization.
-- Add diarization only after live ASR latency and stability are acceptable.
+- Transcription starts only after the recording is stopped and uploaded.
+- Sarvam diarization is used for speaker turns; the speaker hint is passed when provided.
+- MoM generation is extractive by prompt: Gemma is instructed not to invent owners, dates, decisions, or action items.
+- Meeting state is in memory, so sessions reset when the server restarts.
 
 ## Development
 
