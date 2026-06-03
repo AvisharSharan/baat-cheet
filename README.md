@@ -1,20 +1,18 @@
 # Minutes of Meeting Tool
 
-An open-source web app for recording online meetings, producing speaker-wise transcripts, and generating structured minutes of meeting.
-
-The app records audio in the browser, sends the recording to a FastAPI backend, transcribes and diarizes it with Sarvam Saaras v3, and uses Groq to generate meeting notes with summaries, decisions, action items, risks, and next steps.
+An open-source meeting-notes app for recording conversations, transcribing audio with a self-hosted Whisper model, and generating structured minutes with Hugging Face Gemma.
 
 ## Features
 
 - Browser-based meeting recording
 - Google Meet tab audio plus microphone capture
-- Speaker-wise transcription with editable speaker labels
-- Structured MoM generation
+- Local Whisper transcription through `faster-whisper`
+- Structured MoM generation with Hugging Face Gemma
 - Markdown and PDF exports
 - Temporary audio handling with cleanup after transcription
 - Simple FastAPI backend and static frontend
 
-## How It Works
+## Current Flow
 
 ```text
 Browser recording
@@ -23,25 +21,50 @@ Browser recording
 FastAPI upload endpoint
       |
       v
-Sarvam Batch Speech-to-Text
+Local faster-whisper transcription
       |
       v
-Speaker-wise transcript
+Transcript review
       |
       v
-Groq MoM generation
+Hugging Face Gemma MoM generation
       |
       v
 Markdown / PDF export
 ```
 
-## Tech Stack
+## Target Live Stack
 
-- **Backend:** FastAPI
-- **Frontend:** HTML, CSS, vanilla JavaScript
-- **Speech-to-text and diarization:** Sarvam Saaras v3
-- **MoM generation:** GroqCloud
-- **PDF export:** ReportLab
+The next architecture should move from post-meeting upload to live transcription:
+
+```text
+Browser AudioWorklet / MediaRecorder chunks
+      |
+      v
+FastAPI WebSocket
+      |
+      v
+Silero VAD + faster-whisper streaming worker
+      |
+      v
+Live transcript events in browser
+      |
+      v
+Final transcript accumulated in meeting state
+      |
+      v
+Hugging Face Gemma MoM generation
+```
+
+Recommended stack:
+
+- **Frontend streaming:** `AudioWorklet` for PCM chunks, or short `MediaRecorder` WebM chunks for an easier first version
+- **Backend:** FastAPI WebSocket endpoint
+- **Self-hosted ASR:** `faster-whisper`, starting with `small` or `medium`
+- **Voice activity detection:** Silero VAD, or faster-whisper's built-in VAD for the first pass
+- **Live transcript state:** in-memory per meeting initially; Redis if multiple workers/sessions are needed
+- **MoM generation:** Hugging Face OpenAI-compatible router with `google/gemma-4-31B-it`
+- **Speaker diarization:** defer for v1; add local pyannote or Diart after live ASR is stable
 
 ## Setup
 
@@ -56,9 +79,24 @@ python -m pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```env
-SARVAM_API_KEY=your_sarvam_key
-GROQ_API_KEY=your_groq_key
-GROQ_MODEL=llama-3.3-70b-versatile
+HF_TOKEN=your_hugging_face_token
+HF_MOM_MODEL=google/gemma-3-27b-it
+HF_CHAT_BASE_URL=https://router.huggingface.co/v1
+HF_MOM_MAX_TOKENS=1200
+HF_MOM_TIMEOUT_S=240
+HF_MOM_RETRIES=2
+
+LOCAL_WHISPER_MODEL=small
+LOCAL_WHISPER_DEVICE=auto
+LOCAL_WHISPER_COMPUTE_TYPE=int8
+```
+
+For better GPU quality/speed on a CUDA setup, try:
+
+```env
+LOCAL_WHISPER_MODEL=medium
+LOCAL_WHISPER_DEVICE=cuda
+LOCAL_WHISPER_COMPUTE_TYPE=float16
 ```
 
 Run the app:
@@ -73,44 +111,12 @@ Open:
 http://127.0.0.1:8000
 ```
 
-## Usage
+## Notes
 
-1. Select a capture source.
-2. Optionally enter the expected number of speakers.
-3. Click **Start Recording**.
-4. If recording Google Meet, select the Meet tab/window in the browser picker and enable audio sharing.
-5. Click **Stop Recording** when the meeting ends.
-6. Review the speaker-wise transcript.
-7. Rename speakers if needed and save them.
-8. Click **Generate Notes**.
-9. Export the result as Markdown or PDF.
-
-## Recording Google Meet
-
-Use **Meet tab + mic** when you want to capture both remote participants and your own local microphone.
-
-Browser security does not allow a web app to silently listen to another tab. You must explicitly select the Google Meet tab/window in the browser share picker and enable audio sharing.
-
-For cleaner testing, use headphones or keep test devices far apart. If another device is near your laptop, your laptop microphone may capture both your voice and the other device's speaker output.
-
-## Sarvam Batch STT Notes
-
-This app uses Sarvam Batch Speech-to-Text with:
-
-```text
-model="saaras:v3"
-mode="transcribe"
-with_diarization=True
-```
-
-The app uploads one meeting recording per batch job. Sarvam returns diarized transcript entries with speaker IDs and timestamps, which are normalized into editable labels like `Speaker 1`, `Speaker 2`, and so on.
-
-## Privacy Notes
-
-- Uploaded meeting audio is stored temporarily during processing.
-- Audio is deleted after transcription succeeds or fails.
-- Transcript and generated notes are kept in in-memory state for the running server process.
-- This project does not include persistent meeting history by default.
+- The current implementation still uses post-recording upload while the backend is being simplified away from vendor STT.
+- Live transcription should be built as a WebSocket flow rather than polling the existing upload endpoint.
+- Speaker labels are currently `Speaker 1` because local Whisper does not perform diarization.
+- Add diarization only after live ASR latency and stability are acceptable.
 
 ## Development
 
@@ -125,7 +131,3 @@ Compile-check Python files:
 ```powershell
 python -m py_compile app\main.py app\services\transcription.py app\services\mom.py app\services\export.py
 ```
-
-## Credits
-
-Built with speech intelligence from [Sarvam](https://www.sarvam.ai/) and generation from [Groq](https://groq.com/).
