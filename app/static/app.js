@@ -9,6 +9,8 @@ let liveSocket = null;
 let liveAudioNodes = [];
 let recordingUrl = null;
 let liveTranscript = [];
+let cleanupOverlayActive = false;
+let cleanupGlow = null;
 const liveSampleRate = 16000;
 
 const captureMode = document.querySelector("#captureMode");
@@ -184,21 +186,44 @@ async function pollStatus() {
 
 function renderState(data) {
   setStatus(statusLabel(data));
-  liveTranscript = [];
-  renderTranscript(data.transcript || [], data.speaker_names || {});
+  const finalTranscript = data.transcript || [];
+  const keepLiveTranscript = data.status === "transcribing" && finalTranscript.length === 0 && liveTranscript.length > 0;
+  if (finalTranscript.length > 0) {
+    liveTranscript = [];
+    cleanupOverlayActive = false;
+    destroyCleanupGlow();
+  }
+  if (keepLiveTranscript && cleanupOverlayActive) {
+    updateControls(data, finalTranscript);
+    return;
+  }
+  renderTranscript(
+    keepLiveTranscript ? liveTranscript : finalTranscript,
+    keepLiveTranscript ? { Live: "Live captions" } : data.speaker_names || {},
+    {
+      cleanupOverlay: keepLiveTranscript,
+      skipSpeakerEditor: keepLiveTranscript,
+    },
+  );
+  cleanupOverlayActive = keepLiveTranscript;
   if (data.mom_markdown) {
     momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
     exportLinks.innerHTML = `<a href="/api/meetings/${data.id}/export.md">Markdown</a><a href="/api/meetings/${data.id}/export.pdf">PDF</a>`;
   }
+  updateControls(data, finalTranscript);
+}
+
+function updateControls(data, finalTranscript) {
   startBtn.disabled = data.status === "transcribing" || data.status === "generating";
   captureMode.disabled = startBtn.disabled;
   speakerCount.disabled = startBtn.disabled;
-  momBtn.disabled = !data.transcript || data.transcript.length === 0 || data.status === "transcribing" || data.status === "generating";
-  saveSpeakersBtn.disabled = !data.transcript || data.transcript.length === 0;
+  momBtn.disabled = !finalTranscript.length || data.status === "transcribing" || data.status === "generating";
+  saveSpeakersBtn.disabled = !finalTranscript.length;
 }
 
-function renderTranscript(transcript, speakerNames) {
+function renderTranscript(transcript, speakerNames, options = {}) {
+  if (!options.cleanupOverlay) destroyCleanupGlow();
   if (!transcript.length) {
     transcriptEl.className = "transcript transcript-empty";
     transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Start recording to see live captions, then stop to finalize with Sarvam diarization.</span></div>';
@@ -209,20 +234,26 @@ function renderTranscript(transcript, speakerNames) {
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
   updateMetrics(transcript);
-  speakerEditor.innerHTML = speakers
-    .map((speaker) => {
-      const value = speakerNames[speaker] || speaker;
-      return `<label>${escapeHtml(speaker)}<input data-speaker="${escapeHtml(speaker)}" value="${escapeHtml(value)}" /></label>`;
-    })
-    .join("");
+  speakerEditor.innerHTML = options.skipSpeakerEditor
+    ? ""
+    : speakers
+        .map((speaker) => {
+          const value = speakerNames[speaker] || speaker;
+          return `<label>${escapeHtml(speaker)}<input data-speaker="${escapeHtml(speaker)}" value="${escapeHtml(value)}" /></label>`;
+        })
+        .join("");
 
   transcriptEl.className = "transcript";
-  transcriptEl.innerHTML = transcript
+  const cleanupOverlay = options.cleanupOverlay
+    ? '<div class="cleanup-overlay" aria-live="polite"><div class="cleanup-dots"></div><div class="cleanup-glow"></div><div class="cleanup-text">Cleaning up with Sarvam</div></div>'
+    : "";
+  transcriptEl.innerHTML = cleanupOverlay + transcript
     .map((turn) => {
       const label = speakerNames[turn.speaker] || turn.speaker;
       return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
     })
     .join("");
+  if (options.cleanupOverlay) mountCleanupGlow();
 }
 
 function updateMetrics(transcript) {
@@ -275,6 +306,8 @@ function statusLabel(data) {
 function resetSessionOutput() {
   meetingId = null;
   liveTranscript = [];
+  cleanupOverlayActive = false;
+  destroyCleanupGlow();
   if (pollTimer) {
     window.clearInterval(pollTimer);
     pollTimer = null;
@@ -284,6 +317,28 @@ function resetSessionOutput() {
   momOutput.className = "mom mom-empty";
   momOutput.textContent = "Finalize the transcript, then click Draft Minutes to generate.";
   renderTranscript([], {});
+}
+
+function mountCleanupGlow() {
+  if (cleanupGlow) return;
+  const target = transcriptEl.querySelector(".cleanup-dots");
+  if (!target || !window.DottedGlowBackground) return;
+  cleanupGlow = new window.DottedGlowBackground(target, {
+    gap: 13,
+    radius: 1.7,
+    color: "rgba(224,187,106,0.66)",
+    glowColor: "rgba(224,187,106,0.92)",
+    opacity: 0.78,
+    speedMin: 0.34,
+    speedMax: 1.2,
+    speedScale: 0.9,
+  });
+}
+
+function destroyCleanupGlow() {
+  if (!cleanupGlow) return;
+  cleanupGlow.destroy();
+  cleanupGlow = null;
 }
 
 function downsampleToPcm16(float32, inputSampleRate, outputSampleRate) {
