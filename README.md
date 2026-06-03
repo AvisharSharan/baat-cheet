@@ -47,6 +47,10 @@ Create a `.env` file in the project root:
 
 ```env
 SARVAM_API_KEY=your_sarvam_api_key
+SARVAM_STREAM_LANGUAGE_CODE=unknown
+SARVAM_STREAM_SAMPLE_RATE=16000
+SARVAM_STREAM_MODEL=saaras:v3
+SARVAM_STREAM_MODE=transcribe
 
 HF_TOKEN=your_hugging_face_token
 HF_MOM_MODEL=google/gemma-3-27b-it
@@ -70,8 +74,9 @@ http://127.0.0.1:8000
 
 ## Notes
 
-- Transcription starts only after the recording is stopped and uploaded.
-- Sarvam diarization is used for speaker turns; the speaker hint is passed when provided.
+- Live captions stream while recording through Sarvam's streaming STT WebSocket.
+- The final transcript still uses Sarvam batch diarization after the recording is stopped and uploaded.
+- The speaker hint is passed to the batch transcription job when provided.
 - MoM generation is extractive by prompt: Gemma is instructed not to invent owners, dates, decisions, or action items.
 - Meeting state is in memory, so sessions reset when the server restarts.
 

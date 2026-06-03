@@ -4,7 +4,12 @@ let meetingId = null;
 let pollTimer = null;
 let activeStreams = [];
 let activeAudioContext = null;
+let liveAudioContext = null;
+let liveSocket = null;
+let liveAudioNodes = [];
 let recordingUrl = null;
+let liveTranscript = [];
+const liveSampleRate = 16000;
 
 const captureMode = document.querySelector("#captureMode");
 const speakerCount = document.querySelector("#speakerCount");
@@ -39,10 +44,12 @@ async function startRecording() {
       if (event.data.size > 0) chunks.push(event.data);
     };
     recorder.onstop = () => {
+      stopLiveTranscription();
       stopActiveCapture();
       renderRecordingPlayback();
       uploadRecording();
     };
+    await startLiveTranscription(stream);
     recorder.start();
     setStatus("Recording");
     captureMode.disabled = true;
@@ -65,6 +72,70 @@ function stopRecording() {
     recorder.stop();
     setStatus("Uploading audio");
     stopBtn.disabled = true;
+  }
+}
+
+async function startLiveTranscription(stream) {
+  liveSocket = await createLiveSocket();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  liveAudioContext = new AudioContextClass();
+  await liveAudioContext.audioWorklet.addModule("/static/pcm-worklet.js");
+
+  const source = liveAudioContext.createMediaStreamSource(stream);
+  const processor = new AudioWorkletNode(liveAudioContext, "pcm-capture-processor");
+  const mutedOutput = liveAudioContext.createGain();
+  mutedOutput.gain.value = 0;
+  processor.port.onmessage = (event) => {
+    if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
+    const pcm = downsampleToPcm16(event.data, liveAudioContext.sampleRate, liveSampleRate);
+    if (pcm.byteLength > 0) liveSocket.send(pcm);
+  };
+  source.connect(processor);
+  processor.connect(mutedOutput).connect(liveAudioContext.destination);
+  liveAudioNodes = [source, processor, mutedOutput];
+}
+
+async function createLiveSocket() {
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe`);
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (event) => {
+    const payload = JSON.parse(event.data);
+    if (payload.type === "transcript" && payload.turns) {
+      liveTranscript = liveTranscript.concat(payload.turns);
+      renderTranscript(liveTranscript, { Live: "Live" });
+      setStatus("Recording - live captions");
+    }
+    if (payload.type === "error") {
+      setStatus(`Live captions failed: ${payload.message}`);
+    }
+  };
+  socket.onclose = () => {
+    liveSocket = null;
+  };
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve;
+    socket.onerror = () => reject(new Error("Live transcription connection failed"));
+  });
+  socket.onerror = () => setStatus("Live transcription connection failed");
+  return socket;
+}
+
+function stopLiveTranscription() {
+  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+    liveSocket.send("stop");
+  }
+  if (liveAudioContext) {
+    liveAudioNodes.forEach((node) => {
+      try {
+        node.disconnect();
+      } catch (error) {
+        // Node may already be disconnected during browser shutdown.
+      }
+    });
+    liveAudioNodes = [];
+    liveAudioContext.close();
+    liveAudioContext = null;
   }
 }
 
@@ -113,6 +184,7 @@ async function pollStatus() {
 
 function renderState(data) {
   setStatus(statusLabel(data));
+  liveTranscript = [];
   renderTranscript(data.transcript || [], data.speaker_names || {});
   if (data.mom_markdown) {
     momOutput.classList.remove("mom-empty");
@@ -129,7 +201,7 @@ function renderState(data) {
 function renderTranscript(transcript, speakerNames) {
   if (!transcript.length) {
     transcriptEl.className = "transcript transcript-empty";
-    transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Record the meeting, then stop to upload audio for Sarvam transcription.</span></div>';
+    transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Start recording to see live captions, then stop to finalize with Sarvam diarization.</span></div>';
     speakerEditor.innerHTML = "";
     updateMetrics([]);
     return;
@@ -202,6 +274,7 @@ function statusLabel(data) {
 
 function resetSessionOutput() {
   meetingId = null;
+  liveTranscript = [];
   if (pollTimer) {
     window.clearInterval(pollTimer);
     pollTimer = null;
@@ -209,8 +282,34 @@ function resetSessionOutput() {
   clearRecordingPlayback();
   exportLinks.innerHTML = "";
   momOutput.className = "mom mom-empty";
-  momOutput.textContent = "Transcribe the meeting, then click Draft Minutes to generate.";
+  momOutput.textContent = "Finalize the transcript, then click Draft Minutes to generate.";
   renderTranscript([], {});
+}
+
+function downsampleToPcm16(float32, inputSampleRate, outputSampleRate) {
+  if (inputSampleRate === outputSampleRate) {
+    return floatToPcm16(float32);
+  }
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.floor(float32.length / ratio);
+  const output = new Float32Array(outputLength);
+  for (let i = 0; i < outputLength; i += 1) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(Math.floor((i + 1) * ratio), float32.length);
+    let sum = 0;
+    for (let j = start; j < end; j += 1) sum += float32[j];
+    output[i] = sum / Math.max(1, end - start);
+  }
+  return floatToPcm16(output);
+}
+
+function floatToPcm16(float32) {
+  const pcm = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, float32[i]));
+    pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return pcm.buffer;
 }
 
 function renderRecordingPlayback() {

@@ -7,12 +7,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
+from .services.live_transcription import SarvamLiveTranscriptionClient, live_event_to_turn
 from .services.mom import HuggingFaceGemmaMomClient
 from .services.transcription import SarvamTranscriptionClient
 from .storage import MeetingStore, delete_temp_file
@@ -60,6 +61,91 @@ async def upload_audio(
     store.add(meeting)
     background_tasks.add_task(transcribe_meeting, meeting_id)
     return MeetingCreateResponse(id=meeting.id, status=meeting.status)
+
+
+@app.websocket("/api/live/transcribe")
+async def live_transcribe(websocket: WebSocket) -> None:
+    await websocket.accept()
+    meeting_id = uuid4().hex
+    meeting = MeetingState(
+        id=meeting_id,
+        status=MeetingStatus.TRANSCRIBING,
+        speaker_names={"Live": "Live"},
+    )
+    store.add(meeting)
+    await websocket.send_json({"type": "state", "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
+
+    audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=24)
+
+    async def audio_chunks():
+        while True:
+            chunk = await audio_queue.get()
+            if chunk is None:
+                return
+            yield chunk
+
+    async def push_live_events() -> None:
+        turn_index = 0
+        async for event in SarvamLiveTranscriptionClient().stream(audio_chunks()):
+            if event.type == "event":
+                await websocket.send_json({"type": "speech_event", "event": event.event})
+                continue
+            if event.type != "transcript" or not event.text:
+                continue
+            turn_index += 1
+            turn = live_event_to_turn(event, turn_index)
+            current = store.get(meeting_id)
+            current.transcript.append(turn)
+            current.speaker_names = {"Live": current.speaker_names.get("Live", "Live")}
+            store.update(current)
+            await websocket.send_json(
+                {
+                    "type": "transcript",
+                    "turns": [turn.model_dump(mode="json")],
+                    "meeting": MeetingStatusResponse.from_state(current).model_dump(mode="json"),
+                }
+            )
+
+    event_task = asyncio.create_task(push_live_events())
+    try:
+        while True:
+            message = await websocket.receive()
+            if message.get("text") == "stop":
+                await audio_queue.put(None)
+                meeting = store.get(meeting_id)
+                meeting.status = MeetingStatus.TRANSCRIBED
+                store.update(meeting)
+                await websocket.send_json({"type": "state", "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
+                break
+
+            chunk = message.get("bytes")
+            if chunk:
+                try:
+                    audio_queue.put_nowait(chunk)
+                except asyncio.QueueFull:
+                    await websocket.send_json({"type": "warning", "message": "Live audio buffer is full; dropping a short chunk."})
+            if event_task.done():
+                event_task.result()
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        meeting = store.get(meeting_id)
+        meeting.status = MeetingStatus.FAILED
+        meeting.error = str(exc)
+        store.update(meeting)
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc), "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
+        except Exception:
+            pass
+    finally:
+        await audio_queue.put(None)
+        event_task.cancel()
+        await asyncio.gather(event_task, return_exceptions=True)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @app.get("/api/meetings/{meeting_id}/status", response_model=MeetingStatusResponse)
