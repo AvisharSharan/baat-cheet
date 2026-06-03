@@ -4,92 +4,170 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Minutes of Meeting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <div class="grain"></div>
+    <div class="bg-glow"></div>
+
     <main class="shell">
-      <section class="topbar">
-        <div class="titleBlock">
-          <p class="eyebrow">Meeting workspace</p>
-          <h1>Meeting Notes</h1>
-          <p class="subtle">A focused console for recording conversations and preparing clear follow-ups.</p>
+
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <circle cx="11" cy="11" r="10" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M6 11 Q8.5 7 11 11 Q13.5 15 16 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+              <circle cx="11" cy="11" r="1.5" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-label">MEETING WORKSPACE</span>
+            <h1>Meeting Intelligence</h1>
+          </div>
         </div>
-        <div class="statusPill"><span class="statusDot"></span><span id="statusText">Ready</span></div>
-      </section>
+        <div class="status-bar">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span id="statusText">Ready</span>
+          </div>
+        </div>
+      </header>
 
-      <section class="workspace">
+      <div class="workspace">
+
         <aside class="sidebar">
-          <div class="sidebarSection">
-            <h2>Session</h2>
-            <div class="metricGrid">
-              <div class="metric">
-                <span>Speakers</span>
-                <strong id="speakerMetric">0</strong>
+          <div class="sidebar-block">
+            <p class="block-label">Session Metrics</p>
+            <div class="metric-row">
+              <div class="metric-card">
+                <span class="metric-value" id="speakerMetric">0</span>
+                <span class="metric-label">Speakers</span>
               </div>
-              <div class="metric">
-                <span>Turns</span>
-                <strong id="turnMetric">0</strong>
+              <div class="metric-card">
+                <span class="metric-value" id="turnMetric">0</span>
+                <span class="metric-label">Turns</span>
+              </div>
+              <div class="metric-card">
+                <span class="metric-value" id="wordMetric">0</span>
+                <span class="metric-label">Words</span>
               </div>
             </div>
           </div>
 
-          <div class="sidebarSection">
-            <label class="controlField">
-              <span>Capture source</span>
-              <select id="captureMode" aria-label="Capture source">
-                <option value="meeting">Meet tab + mic</option>
-                <option value="microphone">Microphone only</option>
-              </select>
-            </label>
-            <label class="controlField">
-              <span>Expected speakers</span>
-              <input id="speakerCount" type="number" min="1" max="10" placeholder="Auto" />
-            </label>
-          </div>
-
-          <div class="sidebarSection">
-            <div class="actions vertical">
-              <button id="startBtn" class="primary" type="button">Start Recording</button>
-              <button id="stopBtn" class="danger" type="button" disabled>Stop Recording</button>
-              <button id="momBtn" type="button" disabled>Generate Notes</button>
+          <div class="sidebar-block">
+            <p class="block-label">Capture Settings</p>
+            <div class="field-stack">
+              <div class="field-group">
+                <label class="field-label" for="captureMode">Source</label>
+                <div class="select-wrap">
+                  <select id="captureMode" aria-label="Capture source">
+                    <option value="meeting">Meeting tab + mic</option>
+                    <option value="microphone">Microphone only</option>
+                  </select>
+                  <svg class="select-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="speakerCount">Speaker hint</label>
+                <input id="speakerCount" type="number" min="1" max="10" placeholder="Auto-detect" />
+              </div>
             </div>
           </div>
 
-          <div class="sidebarSection compactInfo">
-            <span>Local audio is deleted after processing.</span>
+          <div class="sidebar-block">
+            <p class="block-label">Controls</p>
+            <div class="btn-stack">
+              <button id="startBtn" class="btn btn-primary" type="button">
+                <span class="btn-icon">
+                  <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="currentColor"/></svg>
+                </span>
+                Start Recording
+              </button>
+              <button id="stopBtn" class="btn btn-danger" type="button" disabled>
+                <span class="btn-icon">
+                  <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor"/></svg>
+                </span>
+                Stop & Upload
+              </button>
+              <button id="momBtn" class="btn btn-secondary" type="button" disabled>
+                <span class="btn-icon">
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M2 7h7M2 11h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                Draft Minutes
+              </button>
+            </div>
           </div>
+
+          <div class="sidebar-block playbackSection" id="playbackSection" hidden>
+            <p class="block-label">Captured Audio</p>
+            <audio id="recordingPlayback" controls></audio>
+            <a id="downloadRecordingLink" class="btn btn-ghost" download="meeting-recording.webm">
+              <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v8M3 6l3.5 3.5L10 6M1 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Recording
+            </a>
+          </div>
+
+          <p class="sidebar-hint">Audio is uploaded for Sarvam transcription. Meeting history is not persisted.</p>
         </aside>
 
-        <section class="contentGrid">
-          <div class="panel">
-            <div class="panelHead">
-              <div>
-                <h2>Transcript</h2>
-                <p>Speaker review</p>
+        <section class="content-area">
+
+          <div class="panel panel-transcript">
+            <div class="panel-head">
+              <div class="panel-title-group">
+                <div class="panel-dot" id="transcriptDot"></div>
+                <div>
+                  <h2>Transcript</h2>
+                  <p class="panel-sub">Generated after the recording is uploaded</p>
+                </div>
               </div>
-              <button id="saveSpeakersBtn" class="secondary" type="button" disabled>Save Speakers</button>
+              <div class="panel-actions">
+                <div id="speakerEditor" class="speaker-editor"></div>
+                <button id="saveSpeakersBtn" class="btn btn-ghost btn-sm" type="button" disabled>Save Labels</button>
+              </div>
             </div>
-            <div id="speakerEditor" class="speakerEditor"></div>
-            <div id="transcript" class="transcript empty">
-              <strong>No transcript yet</strong>
-              <span>Record a session to populate speaker turns.</span>
+            <div id="transcript" class="transcript transcript-empty">
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                    <path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                  </svg>
+                </div>
+                <strong>No transcript yet</strong>
+                <span>Record the meeting, then stop to upload audio for Sarvam transcription.</span>
+              </div>
             </div>
           </div>
 
-          <div class="panel">
-            <div class="panelHead">
-              <div>
-                <h2>Notes</h2>
-                <p>Meeting output</p>
+          <div class="panel panel-minutes">
+            <div class="panel-head">
+              <div class="panel-title-group">
+                <div class="panel-dot panel-dot-amber" id="minutesDot"></div>
+                <div>
+                  <h2>Draft Minutes</h2>
+                  <p class="panel-sub">AI-generated from the transcript</p>
+                </div>
               </div>
-              <div class="exportLinks" id="exportLinks"></div>
+              <div class="export-links" id="exportLinks"></div>
             </div>
-            <pre id="momOutput" class="mom empty">No notes generated yet.</pre>
+            <pre id="momOutput" class="mom mom-empty">Transcribe the meeting, then click Draft Minutes to generate.</pre>
           </div>
+
         </section>
-      </section>
-      <footer class="footerCredit">Built with local open-source speech transcription and Hugging Face Gemma.</footer>
+      </div>
+
+      <footer class="footer">
+        <span>Built with Sarvam speech transcription</span>
+        <span class="footer-sep">&middot;</span>
+        <span>Hugging Face Gemma for minute generation</span>
+      </footer>
     </main>
+
     <script src="/static/app.js"></script>
   </body>
 </html>

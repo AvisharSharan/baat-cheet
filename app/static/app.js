@@ -4,6 +4,7 @@ let meetingId = null;
 let pollTimer = null;
 let activeStreams = [];
 let activeAudioContext = null;
+let recordingUrl = null;
 
 const captureMode = document.querySelector("#captureMode");
 const speakerCount = document.querySelector("#speakerCount");
@@ -18,6 +19,10 @@ const momOutput = document.querySelector("#momOutput");
 const exportLinks = document.querySelector("#exportLinks");
 const speakerMetric = document.querySelector("#speakerMetric");
 const turnMetric = document.querySelector("#turnMetric");
+const wordMetric = document.querySelector("#wordMetric");
+const playbackSection = document.querySelector("#playbackSection");
+const recordingPlayback = document.querySelector("#recordingPlayback");
+const downloadRecordingLink = document.querySelector("#downloadRecordingLink");
 
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
@@ -27,6 +32,7 @@ saveSpeakersBtn.addEventListener("click", saveSpeakers);
 async function startRecording() {
   try {
     const stream = captureMode.value === "meeting" ? await createMeetingCaptureStream() : await createMicrophoneStream();
+    resetSessionOutput();
     chunks = [];
     recorder = new MediaRecorder(stream, getRecorderOptions());
     recorder.ondataavailable = (event) => {
@@ -34,10 +40,11 @@ async function startRecording() {
     };
     recorder.onstop = () => {
       stopActiveCapture();
+      renderRecordingPlayback();
       uploadRecording();
     };
     recorder.start();
-    setStatus("Recording...");
+    setStatus("Recording");
     captureMode.disabled = true;
     speakerCount.disabled = true;
     startBtn.disabled = true;
@@ -56,13 +63,14 @@ async function startRecording() {
 function stopRecording() {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
-    setStatus("Uploading audio...");
+    setStatus("Uploading audio");
     stopBtn.disabled = true;
   }
 }
 
 async function uploadRecording() {
-  const blob = new Blob(chunks, { type: "audio/webm" });
+  const mimeType = recorder && recorder.mimeType ? recorder.mimeType : "audio/webm";
+  const blob = new Blob(chunks, { type: mimeType });
   captureMode.disabled = false;
   speakerCount.disabled = false;
   if (!blob.size) {
@@ -70,8 +78,9 @@ async function uploadRecording() {
     startBtn.disabled = false;
     return;
   }
+
   const form = new FormData();
-  form.append("audio", blob, "meeting.webm");
+  form.append("audio", blob, recordingFilename(mimeType));
   const expectedSpeakers = Number(speakerCount.value);
   if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
@@ -86,7 +95,7 @@ async function uploadRecording() {
 
   const data = await response.json();
   meetingId = data.id;
-  setStatus("Transcribing...");
+  setStatus("Transcribing with Sarvam");
   pollStatus();
   pollTimer = window.setInterval(pollStatus, 2500);
 }
@@ -103,10 +112,10 @@ async function pollStatus() {
 }
 
 function renderState(data) {
-  setStatus(data.error ? `${data.status}: ${data.error}` : data.status);
+  setStatus(statusLabel(data));
   renderTranscript(data.transcript || [], data.speaker_names || {});
   if (data.mom_markdown) {
-    momOutput.classList.remove("empty");
+    momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
     exportLinks.innerHTML = `<a href="/api/meetings/${data.id}/export.md">Markdown</a><a href="/api/meetings/${data.id}/export.pdf">PDF</a>`;
   }
@@ -119,8 +128,8 @@ function renderState(data) {
 
 function renderTranscript(transcript, speakerNames) {
   if (!transcript.length) {
-    transcriptEl.className = "transcript empty";
-    transcriptEl.innerHTML = "<strong>No transcript yet</strong><span>Start a recording and stop it when the meeting ends.</span>";
+    transcriptEl.className = "transcript transcript-empty";
+    transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Record the meeting, then stop to upload audio for Sarvam transcription.</span></div>';
     speakerEditor.innerHTML = "";
     updateMetrics([]);
     return;
@@ -139,15 +148,17 @@ function renderTranscript(transcript, speakerNames) {
   transcriptEl.innerHTML = transcript
     .map((turn) => {
       const label = speakerNames[turn.speaker] || turn.speaker;
-      return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><br />${escapeHtml(turn.text)}</div>`;
+      return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
     })
     .join("");
 }
 
 function updateMetrics(transcript) {
   const speakers = new Set(transcript.map((turn) => turn.speaker));
+  const words = transcript.reduce((count, turn) => count + turn.text.trim().split(/\s+/).filter(Boolean).length, 0);
   speakerMetric.textContent = String(speakers.size);
   turnMetric.textContent = String(transcript.length);
+  wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : String(words);
 }
 
 async function saveSpeakers() {
@@ -167,7 +178,7 @@ async function saveSpeakers() {
 async function generateMom() {
   if (!meetingId) return;
   await saveSpeakers();
-  setStatus("Generating notes...");
+  setStatus("Drafting minutes with Gemma");
   momBtn.disabled = true;
   const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
   renderState(await response.json());
@@ -175,6 +186,54 @@ async function generateMom() {
 
 function setStatus(text) {
   statusText.textContent = text;
+  const normalized = String(text).toLowerCase();
+  document.body.dataset.recordingState = normalized.includes("recording") ? "recording" : "";
+}
+
+function statusLabel(data) {
+  if (data.error) return `${data.status}: ${data.error}`;
+  if (data.status === "uploaded") return "Uploaded";
+  if (data.status === "transcribing") return "Transcribing with Sarvam";
+  if (data.status === "transcribed") return "Transcript ready";
+  if (data.status === "generating") return "Drafting minutes";
+  if (data.status === "ready") return "Minutes ready";
+  return data.status;
+}
+
+function resetSessionOutput() {
+  meetingId = null;
+  if (pollTimer) {
+    window.clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  clearRecordingPlayback();
+  exportLinks.innerHTML = "";
+  momOutput.className = "mom mom-empty";
+  momOutput.textContent = "Transcribe the meeting, then click Draft Minutes to generate.";
+  renderTranscript([], {});
+}
+
+function renderRecordingPlayback() {
+  clearRecordingPlayback();
+  if (!chunks.length) return;
+  const mimeType = recorder && recorder.mimeType ? recorder.mimeType : "audio/webm";
+  const recording = new Blob(chunks, { type: mimeType });
+  recordingUrl = URL.createObjectURL(recording);
+  recordingPlayback.src = recordingUrl;
+  downloadRecordingLink.href = recordingUrl;
+  downloadRecordingLink.download = recordingFilename(mimeType);
+  playbackSection.hidden = false;
+}
+
+function clearRecordingPlayback() {
+  if (recordingUrl) {
+    URL.revokeObjectURL(recordingUrl);
+    recordingUrl = null;
+  }
+  recordingPlayback.removeAttribute("src");
+  recordingPlayback.load();
+  downloadRecordingLink.removeAttribute("href");
+  playbackSection.hidden = true;
 }
 
 async function createMicrophoneStream() {
@@ -229,6 +288,10 @@ function getRecorderOptions() {
   const preferredTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type));
   return mimeType ? { mimeType } : {};
+}
+
+function recordingFilename(mimeType) {
+  return mimeType.includes("mp4") ? "meeting-recording.mp4" : "meeting-recording.webm";
 }
 
 function escapeHtml(value) {
