@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
-from .services.mom import GroqMomClient
-from .services.transcription import SarvamTranscriptionClient
+from .services.mom import HuggingFaceGemmaMomClient
+from .services.transcription import LocalWhisperTranscriptionClient
 from .storage import MeetingStore, delete_temp_file
 
 load_dotenv()
@@ -87,7 +87,7 @@ async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
     meeting.status = MeetingStatus.GENERATING
     store.update(meeting)
     try:
-        meeting.mom_markdown = await GroqMomClient().generate(meeting.transcript, meeting.speaker_names)
+        meeting.mom_markdown = await HuggingFaceGemmaMomClient().generate(meeting.transcript, meeting.speaker_names)
         meeting.status = MeetingStatus.READY
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
@@ -125,7 +125,7 @@ async def transcribe_meeting(meeting_id: str) -> None:
     store.update(meeting)
 
     try:
-        meeting.transcript = await SarvamTranscriptionClient().transcribe(
+        meeting.transcript = await LocalWhisperTranscriptionClient().transcribe(
             meeting.audio_path or "",
             num_speakers=meeting.num_speakers,
         )
