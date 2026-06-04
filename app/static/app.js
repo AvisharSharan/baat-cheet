@@ -22,6 +22,7 @@ const saveSpeakersBtn = document.querySelector("#saveSpeakersBtn");
 const statusText = document.querySelector("#statusText");
 const transcriptEl = document.querySelector("#transcript");
 const speakerEditor = document.querySelector("#speakerEditor");
+const rememberVoices = document.querySelector("#rememberVoices");
 const momOutput = document.querySelector("#momOutput");
 const exportLinks = document.querySelector("#exportLinks");
 const speakerMetric = document.querySelector("#speakerMetric");
@@ -220,6 +221,8 @@ function updateControls(data, finalTranscript) {
   speakerCount.disabled = startBtn.disabled;
   momBtn.disabled = !finalTranscript.length || data.status === "transcribing" || data.status === "generating";
   saveSpeakersBtn.disabled = !finalTranscript.length;
+  rememberVoices.disabled = !finalTranscript.length || !data.voiceprints_ready;
+  rememberVoices.title = voiceprintHint(data);
 }
 
 function renderTranscript(transcript, speakerNames, options = {}) {
@@ -228,6 +231,9 @@ function renderTranscript(transcript, speakerNames, options = {}) {
     transcriptEl.className = "transcript transcript-empty";
     transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Start recording to see live captions, then stop to finalize with Sarvam diarization.</span></div>';
     speakerEditor.innerHTML = "";
+    rememberVoices.checked = false;
+    rememberVoices.disabled = true;
+    rememberVoices.title = "Voiceprints become available after final transcription.";
     updateMetrics([]);
     return;
   }
@@ -264,6 +270,14 @@ function updateMetrics(transcript) {
   wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : String(words);
 }
 
+function voiceprintHint(data) {
+  if (data.voiceprints_ready) return "Store local voice profiles for these labels";
+  if (data.voiceprint_error) return data.voiceprint_error;
+  if (data.voiceprint_status === "processing") return "Voiceprints are being prepared";
+  if (data.voiceprint_status === "pending") return "Voiceprints become available after final transcription";
+  return "Voiceprints are not available for this transcript";
+}
+
 async function saveSpeakers() {
   if (!meetingId) return;
   const speakers = {};
@@ -273,7 +287,7 @@ async function saveSpeakers() {
   const response = await fetch(`/api/meetings/${meetingId}/speakers`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ speakers }),
+    body: JSON.stringify({ speakers, remember_voices: rememberVoices.checked }),
   });
   renderState(await response.json());
 }

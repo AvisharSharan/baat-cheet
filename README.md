@@ -43,6 +43,20 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
+Optional voiceprinting support:
+
+```powershell
+python -m pip install -r requirements-voiceprint.txt
+```
+
+Voiceprinting runs in a separate worker process so the optional ML stack does not destabilize the FastAPI server. Enable it explicitly in `.env`:
+
+```env
+VOICEPRINTING_ENABLED=1
+```
+
+Voice profiles are stored locally in `data/speaker_profiles.json` by default. Set `VOICE_PROFILE_STORE_PATH` to use a different file. Speaker labels are remembered only when `Remember voices` is checked before saving labels. Set `VOICEPRINTING_USE_WORKER=0` only for debugging; the worker path is recommended on Windows.
+
 Create a `.env` file in the project root:
 
 ```env

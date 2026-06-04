@@ -19,3 +19,5 @@ htmlcov/
 *.log
 *.tmp
 *_sarvam/
+/data/
+/pretrained_models/
