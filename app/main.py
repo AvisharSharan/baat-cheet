@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -15,6 +16,7 @@ from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingS
 from .services.export import markdown_to_pdf
 from .services.live_transcription import SarvamLiveTranscriptionClient, live_event_to_turn
 from .services.mom import HuggingFaceGemmaMomClient
+from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
 from .services.transcription import SarvamTranscriptionClient
 from .storage import MeetingStore, delete_temp_file
 
@@ -22,6 +24,7 @@ load_dotenv()
 
 app = FastAPI(title="Minutes-of-Meeting Tool")
 store = MeetingStore()
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -164,6 +167,11 @@ async def update_speakers(meeting_id: str, update: SpeakerUpdate) -> MeetingStat
             detail=f"Speaker label(s) must not be blank: {', '.join(blank_keys)}",
         )
     meeting.speaker_names.update({key: value.strip() for key, value in update.speakers.items()})
+    if update.remember_voices:
+        try:
+            SpeakerIdentifier().remember_labels(meeting.speaker_embeddings, meeting.speaker_names)
+        except Exception:
+            logger.warning("Could not persist voice profiles.", exc_info=True)
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
 
@@ -223,7 +231,33 @@ async def transcribe_meeting(meeting_id: str) -> None:
             num_speakers=meeting.num_speakers,
         )
         speakers = sorted({turn.speaker for turn in meeting.transcript})
-        meeting.speaker_names = {speaker: speaker for speaker in speakers}
+        meeting.speaker_embeddings = {}
+        meeting.voiceprint_status = "processing"
+        meeting.voiceprint_error = None
+        try:
+            identifier = SpeakerIdentifier()
+            meeting.speaker_embeddings = await identifier.extract_speaker_embeddings(
+                meeting.audio_path or "",
+                meeting.transcript,
+            )
+            if meeting.speaker_embeddings:
+                meeting.speaker_names = identifier.label_speakers(meeting.speaker_embeddings, speakers)
+                meeting.voiceprint_status = "ready"
+                meeting.voiceprint_error = None
+            else:
+                meeting.speaker_names = {speaker: speaker for speaker in speakers}
+                meeting.voiceprint_status = "unavailable"
+                meeting.voiceprint_error = "No usable speaker audio segments were found for voiceprinting."
+        except SpeakerIdentificationUnavailable as exc:
+            logger.info("Voiceprinting unavailable: %s", exc)
+            meeting.speaker_names = {speaker: speaker for speaker in speakers}
+            meeting.voiceprint_status = "unavailable"
+            meeting.voiceprint_error = str(exc)
+        except Exception:
+            logger.warning("Voiceprinting failed; falling back to diarized speaker labels.", exc_info=True)
+            meeting.speaker_names = {speaker: speaker for speaker in speakers}
+            meeting.voiceprint_status = "failed"
+            meeting.voiceprint_error = "Voiceprinting failed. Check the server log for details."
         meeting.status = MeetingStatus.TRANSCRIBED
         meeting.error = None
     except Exception as exc:
