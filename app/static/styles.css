@@ -422,7 +422,8 @@ select option { background: var(--bg-3); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-2);
-  min-height: calc(100vh - 200px);
+  height: calc(100vh - 200px);
+  min-height: 520px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -508,6 +509,7 @@ select option { background: var(--bg-3); }
 .transcript {
   position: relative;
   flex: 1;
+  min-height: 0;
   padding: 0 18px 18px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -552,8 +554,8 @@ select option { background: var(--bg-3); }
   position: sticky;
   top: 0;
   z-index: 5;
-  height: calc(100vh - 260px);
-  min-height: 280px;
+  height: 100%;
+  min-height: 100%;
   margin: 0 -18px -100%;
   display: flex;
   align-items: center;
@@ -739,7 +741,10 @@ select option { background: var(--bg-3); }
 /* ─── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .content-area { grid-template-columns: 1fr; }
-  .panel { min-height: 60vh; }
+  .panel {
+    height: 68vh;
+    min-height: 460px;
+  }
 }
 
 @media (max-width: 820px) {
