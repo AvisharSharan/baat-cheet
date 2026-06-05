@@ -96,11 +96,24 @@ class MomGenerationClient:
 HuggingFaceGemmaMomClient = MomGenerationClient
 
 
-SYSTEM_PROMPT = """You generate concise, business-ready Minutes of Meeting.
-Use plain Markdown. Preserve concrete decisions, owners, dates, risks, and open questions.
-Use only facts stated in the transcript. Do not invent decisions, owners, dates, risks, or next steps.
-Do not use inline Markdown styling such as **bold**, __bold__, *italic*, or _italic_.
-If an owner or due date is not stated, write "Not specified" instead of inventing it."""
+SYSTEM_PROMPT = """\
+You are a precise business analyst who writes Minutes of Meeting (MoM) documents.
+
+Factual constraints — never violate these:
+- Use only information explicitly stated in the transcript. Do not infer, extrapolate, or assume.
+- Do not convert a discussion point into a decision unless a speaker explicitly signals agreement or a conclusion (e.g. "we agreed", "let's go with", "decided").
+- Do not create an action item unless a speaker explicitly commits someone to a task.
+- If a field or section has no evidence in the transcript, write "Not stated" — never leave it blank.
+
+Style constraints — never violate these:
+- Write in plain Markdown: headings and unordered lists only, plus one table for action items.
+- No bold, italic, underline, or any other inline Markdown styling.
+- No HTML, blockquotes, horizontal rules, or decorative separators.
+- Unordered list bullets must use "- " exactly; never use "*" or "+".
+- One sentence per bullet. Use past tense for observations; use imperative for action items.
+- Reproduce speaker names exactly as they appear in the transcript — do not paraphrase or abbreviate them.
+- Do not repeat the same fact across multiple sections.\
+"""
 
 
 def build_mom_prompt(transcript: List[SpeakerTurn], speaker_names: Dict[str, str]) -> str:
@@ -110,33 +123,51 @@ def build_mom_prompt(transcript: List[SpeakerTurn], speaker_names: Dict[str, str
         lines.append(f"{speaker}: {turn.text}")
 
     transcript_text = "\n".join(lines)
-    return f"""Create structured Minutes of Meeting from this speaker-wise transcript.
+    return f"""\
+The transcript below has already been sorted chronologically and speaker labels have been \
+resolved to full names. Diarization may contain short overlapping fragments or incomplete \
+sentences — treat these as part of the surrounding context, not as separate statements.
 
-Accuracy rules:
-- Use only the transcript below as source material.
-- Do not invent action items, design changes, timelines, blockers, or follow-up meetings.
-- Do not convert a discussion point into a decision unless the transcript explicitly says a decision was made.
-- Do not create an action item unless a speaker explicitly says someone will do something.
-- If a section has no evidence, write "None stated."
+Generate a Minutes of Meeting document using exactly the Markdown structure below. \
+Emit every heading even if a section has no content; in that case write a single \
+bullet "- Not stated" under it.
 
-Formatting rules:
-- Use only headings, plain bullet lists, and the action-item table.
-- Do not use bold, italic, inline Markdown styling, HTML, blockquotes, horizontal rules, or decorative separators.
-- Start every bullet with "- " exactly.
-- Do not use "*" bullets.
-- Keep each bullet to one sentence.
+---
 
-Required Markdown headings:
 # Minutes of Meeting
-## Attendees / Speakers
-## Executive Summary
-## Key Discussion Points
-## Decisions
-## Action Items
-## Risks / Blockers
-## Next Steps
 
-For action items, use a Markdown table with columns: Action Item, Owner, Due Date, Source / Context.
+## Meeting Details
+- Date: <date or "Not stated">
+- Time: <time or "Not stated">
+- Facilitator: <name or "Not stated">
+- Attendees: <comma-separated list of every speaker name that appears in the transcript>
+
+## Objective
+<One sentence stating the meeting's stated purpose. If no purpose was stated, write "Not stated.">
+
+## Key Discussion Points
+<Bullet list of topics discussed. One sentence per bullet. Chronological order.>
+
+## Decisions
+<Numbered list. Each item is one explicit, unambiguous decision reached during the meeting. \
+Only include decisions — not proposals, suggestions, or open topics.>
+
+## Action Items
+| # | Action | Owner | Due Date | Notes |
+|---|--------|-------|----------|-------|
+<One row per action item. Owner and Due Date are "Not stated" if not explicit. \
+Notes column captures source context in 10 words or fewer.>
+
+## Risks and Blockers
+<Bullet list of concerns, blockers, or risks explicitly flagged by speakers.>
+
+## Open Questions
+<Bullet list of questions that were raised but not resolved in the meeting.>
+
+## Next Meeting
+<Date, time, and agenda topics if stated. Otherwise a single bullet "- Not stated".>
+
+---
 
 Transcript:
 {transcript_text}
