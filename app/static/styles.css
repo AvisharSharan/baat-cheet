@@ -818,6 +818,140 @@ html[data-theme="light"] .cleanup-text {
   text-align: center;
 }
 
+/* ─── MINUTES GENERATING OVERLAY ────────────────────────────── */
+.panel-minutes {
+  position: relative;
+}
+
+.panel-minutes.mom-generating::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: calc(var(--radius) - 1px);
+  pointer-events: none;
+  background:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E"),
+    linear-gradient(
+      135deg,
+      rgba(201,168,76,0.13) 0%,
+      rgba(74,172,122,0.09) 25%,
+      rgba(13,15,14,0.0) 50%,
+      rgba(201,168,76,0.11) 75%,
+      rgba(74,172,122,0.08) 100%
+    );
+  background-size: 180px 180px, 400% 400%;
+  animation: momGradientShift 4s ease-in-out infinite;
+}
+
+.panel-minutes.mom-generating::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  border-radius: calc(var(--radius) - 1px);
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(224,187,106,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 65%, rgba(74,172,122,0.11) 0%, transparent 50%),
+    radial-gradient(ellipse at 55% 20%, rgba(201,168,76,0.10) 0%, transparent 45%);
+  animation: momAuraShift 5.5s ease-in-out infinite alternate;
+  filter: blur(2px);
+}
+
+.mom-generating-label {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,168,76,0.28);
+  background: rgba(13,15,14,0.72);
+  backdrop-filter: blur(10px) saturate(1.2);
+  color: var(--gold-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-shadow: 0 0 14px rgba(224,187,106,0.4);
+  white-space: nowrap;
+  animation: momLabelFade 0.4s ease;
+  pointer-events: none;
+}
+
+html[data-theme="light"] .mom-generating-label {
+  background: rgba(240,242,236,0.82);
+  border-color: rgba(138,104,24,0.22);
+  text-shadow: 0 0 12px rgba(154,118,36,0.25), 0 2px 14px rgba(255,255,255,0.9);
+}
+
+.mom-generating-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.mom-generating-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold-2);
+  animation: momDotBounce 1.2s ease-in-out infinite;
+}
+
+.mom-generating-dots span:nth-child(2) { animation-delay: 0.18s; }
+.mom-generating-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes momGradientShift {
+  0%   { background-position: 180px 180px, 0% 50%; }
+  50%  { background-position: 180px 180px, 100% 50%; }
+  100% { background-position: 180px 180px, 0% 50%; }
+}
+
+@keyframes momAuraShift {
+  0%   { opacity: 0.7; transform: scale(1) rotate(0deg); }
+  33%  { opacity: 1;   transform: scale(1.03) rotate(0.5deg); }
+  66%  { opacity: 0.8; transform: scale(0.98) rotate(-0.3deg); }
+  100% { opacity: 1;   transform: scale(1.02) rotate(0.2deg); }
+}
+
+@keyframes momLabelFade {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes momDotBounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40%            { transform: scale(1.2); opacity: 1; }
+}
+
+html[data-theme="light"] .panel-minutes.mom-generating::before {
+  background:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E"),
+    linear-gradient(
+      135deg,
+      rgba(138,104,24,0.10) 0%,
+      rgba(29,110,71,0.07) 25%,
+      rgba(240,242,236,0.0) 50%,
+      rgba(138,104,24,0.09) 75%,
+      rgba(29,110,71,0.06) 100%
+    );
+  background-size: 180px 180px, 400% 400%;
+}
+
+html[data-theme="light"] .panel-minutes.mom-generating::after {
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(165,126,34,0.14) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 65%, rgba(29,110,71,0.09) 0%, transparent 50%),
+    radial-gradient(ellipse at 55% 20%, rgba(138,104,24,0.08) 0%, transparent 45%);
+}
+
 /* ─── EXPORT LINKS ───────────────────────────────────────────── */
 .export-links {
   display: flex;

@@ -30,6 +30,7 @@ const speakerEditor = document.querySelector("#speakerEditor");
 const rememberVoices = document.querySelector("#rememberVoices");
 const momOutput = document.querySelector("#momOutput");
 const exportLinks = document.querySelector("#exportLinks");
+const panelMinutes = document.querySelector(".panel-minutes");
 const speakerMetric = document.querySelector("#speakerMetric");
 const turnMetric = document.querySelector("#turnMetric");
 const wordMetric = document.querySelector("#wordMetric");
@@ -237,9 +238,13 @@ function renderState(data) {
   );
   cleanupOverlayActive = keepLiveTranscript;
   if (data.mom_markdown) {
+    setMomGenerating(false);
     momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
     exportLinks.innerHTML = `<a href="/api/meetings/${data.id}/export.md">Markdown</a><a href="/api/meetings/${data.id}/export.pdf">PDF</a>`;
+  }
+  if (data.status !== "generating") {
+    setMomGenerating(false);
   }
   updateControls(data, finalTranscript);
 }
@@ -325,8 +330,25 @@ async function generateMom() {
   await saveSpeakers();
   setStatus("Drafting minutes");
   momBtn.disabled = true;
+  setMomGenerating(true);
   const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
   renderState(await response.json());
+}
+
+function setMomGenerating(active) {
+  if (active) {
+    panelMinutes.classList.add("mom-generating");
+    if (!panelMinutes.querySelector(".mom-generating-label")) {
+      const label = document.createElement("div");
+      label.className = "mom-generating-label";
+      label.innerHTML = '<div class="mom-generating-dots"><span></span><span></span><span></span></div>Drafting Minutes';
+      panelMinutes.appendChild(label);
+    }
+  } else {
+    panelMinutes.classList.remove("mom-generating");
+    const label = panelMinutes.querySelector(".mom-generating-label");
+    if (label) label.remove();
+  }
 }
 
 function setStatus(text) {
@@ -350,6 +372,7 @@ function resetSessionOutput() {
   liveTranscript = [];
   cleanupOverlayActive = false;
   destroyCleanupGlow();
+  setMomGenerating(false);
   if (pollTimer) {
     window.clearInterval(pollTimer);
     pollTimer = null;
