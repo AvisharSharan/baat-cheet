@@ -23,6 +23,25 @@
   --font-disp: 'DM Serif Display', Georgia, serif;
 }
 
+html[data-theme="light"] {
+  --bg:        #f0f2ec;
+  --bg-2:      #fafbf8;
+  --bg-3:      #e8ede5;
+  --bg-4:      #dde5da;
+  --border:    #cdd6ca;
+  --border-2:  #bac5b7;
+  --text:      #111a14;
+  --text-2:    #445249;
+  --text-3:    #6b7c71;
+  --gold:      #8a6818;
+  --gold-2:    #a57e22;
+  --gold-dim:  rgba(138,104,24,0.10);
+  --green:     #1d6e47;
+  --green-dim: rgba(29,110,71,0.10);
+  --red:       #a83e2d;
+  --red-dim:   rgba(168,62,45,0.09);
+}
+
 /* ─── RESET & BASE ────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -34,6 +53,7 @@ body {
   color: var(--text);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background 0.2s, color 0.2s;
 }
 
 /* ─── ATMOSPHERE ─────────────────────────────────────────────── */
@@ -57,6 +77,12 @@ body {
   height: 600px;
   background: radial-gradient(ellipse at 50% 0%, rgba(201,168,76,0.055) 0%, transparent 70%);
   z-index: 0;
+}
+
+html[data-theme="light"] .grain { opacity: 0.015; }
+
+html[data-theme="light"] .bg-glow {
+  background: radial-gradient(ellipse at 50% 0%, rgba(138,104,24,0.08) 0%, transparent 70%);
 }
 
 /* ─── LAYOUT ─────────────────────────────────────────────────── */
@@ -129,6 +155,57 @@ h2 {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, box-shadow 0.18s;
+  letter-spacing: 0.01em;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-4);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-dim);
+}
+
+html[data-theme="light"] .theme-toggle:hover {
+  box-shadow: 0 0 0 3px var(--gold-dim);
+}
+
+.theme-icon {
+  flex-shrink: 0;
+  transition: transform 0.3s ease, opacity 0.2s;
+}
+
+.theme-icon-moon {
+  display: none;
+}
+
+html[data-theme="light"] .theme-icon-sun {
+  display: none;
+}
+
+html[data-theme="light"] .theme-icon-moon {
+  display: block;
+}
+
+/* In light mode, show "Dark" label; in dark mode show "Light" */
+#themeToggleText {
+  transition: opacity 0.15s;
 }
 
 .status-pill {
@@ -608,6 +685,10 @@ select option { background: var(--bg-3); }
   backdrop-filter: blur(7px) saturate(1.15);
 }
 
+html[data-theme="light"] .cleanup-overlay {
+  background: rgba(245,247,242,0.72);
+}
+
 .cleanup-dots {
   position: absolute;
   inset: 0;
@@ -654,6 +735,12 @@ select option { background: var(--bg-3); }
   text-shadow:
     0 0 14px rgba(224,187,106,0.44),
     0 2px 18px rgba(0,0,0,0.72);
+}
+
+html[data-theme="light"] .cleanup-text {
+  text-shadow:
+    0 0 12px rgba(154,118,36,0.28),
+    0 2px 16px rgba(255,255,255,0.9);
 }
 
 @keyframes cleanupAura {
@@ -758,6 +845,62 @@ select option { background: var(--bg-3); }
 .export-links a:hover {
   border-color: var(--gold);
   background: var(--gold-dim);
+}
+
+/* ─── LIGHT THEME DEPTH ──────────────────────────────────────── */
+html[data-theme="light"] .sidebar {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+}
+
+html[data-theme="light"] .panel {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+}
+
+html[data-theme="light"] .topbar {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="light"] .brand-icon {
+  background: var(--bg-2);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+html[data-theme="light"] .metric-card {
+  background: var(--bg-2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+html[data-theme="light"] select,
+html[data-theme="light"] input[type="number"],
+html[data-theme="light"] input[type="file"] {
+  background: var(--bg-2);
+}
+
+html[data-theme="light"] .btn-secondary {
+  background: var(--bg-2);
+}
+
+html[data-theme="light"] .btn-ghost {
+  background: transparent;
+}
+
+html[data-theme="light"] .status-pill {
+  background: var(--bg-2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+html[data-theme="light"] .theme-toggle {
+  background: var(--bg-2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+html[data-theme="light"] .panel-head {
+  background: var(--bg-3);
+}
+
+html[data-theme="light"] .cleanup-overlay {
+  background: rgba(240,242,236,0.8);
+  backdrop-filter: blur(8px) saturate(1.2);
 }
 
 /* ─── FOOTER ─────────────────────────────────────────────────── */

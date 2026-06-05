@@ -37,6 +37,8 @@ const playbackSection = document.querySelector("#playbackSection");
 const recordingPlayback = document.querySelector("#recordingPlayback");
 const downloadRecordingLink = document.querySelector("#downloadRecordingLink");
 const workflowHint = document.querySelector("#workflowHint");
+const themeToggle = document.querySelector("#themeToggle");
+const themeToggleText = document.querySelector("#themeToggleText");
 
 workflowMode.addEventListener("change", updateWorkflowMode);
 recordedFile.addEventListener("change", updateWorkflowMode);
@@ -45,6 +47,8 @@ stopBtn.addEventListener("click", stopRecording);
 uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
 momBtn.addEventListener("click", generateMom);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
+themeToggle.addEventListener("click", toggleTheme);
+syncThemeToggle();
 updateWorkflowMode();
 
 async function startRecording() {
@@ -526,4 +530,24 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  if (nextTheme === "light") {
+    document.documentElement.dataset.theme = "light";
+    localStorage.setItem("momTheme", "light");
+  } else {
+    delete document.documentElement.dataset.theme;
+    localStorage.setItem("momTheme", "dark");
+  }
+  syncThemeToggle();
+}
+
+function syncThemeToggle() {
+  const light = document.documentElement.dataset.theme === "light";
+  themeToggle.setAttribute("aria-pressed", String(light));
+  themeToggle.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
+  themeToggle.title = light ? "Switch to dark theme" : "Switch to light theme";
+  themeToggleText.textContent = light ? "Dark" : "Light";
 }
