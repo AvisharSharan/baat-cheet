@@ -13,7 +13,12 @@ let cleanupOverlayActive = false;
 let cleanupGlow = null;
 const liveSampleRate = 16000;
 
+const workflowMode = document.querySelector("#workflowMode");
 const captureMode = document.querySelector("#captureMode");
+const realtimeSettings = document.querySelectorAll(".realtime-setting");
+const recordedSettings = document.querySelectorAll(".recorded-setting");
+const recordedFile = document.querySelector("#recordedFile");
+const uploadRecordedBtn = document.querySelector("#uploadRecordedBtn");
 const speakerCount = document.querySelector("#speakerCount");
 const startBtn = document.querySelector("#startBtn");
 const stopBtn = document.querySelector("#stopBtn");
@@ -31,11 +36,16 @@ const wordMetric = document.querySelector("#wordMetric");
 const playbackSection = document.querySelector("#playbackSection");
 const recordingPlayback = document.querySelector("#recordingPlayback");
 const downloadRecordingLink = document.querySelector("#downloadRecordingLink");
+const workflowHint = document.querySelector("#workflowHint");
 
+workflowMode.addEventListener("change", updateWorkflowMode);
+recordedFile.addEventListener("change", updateWorkflowMode);
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
+uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
 momBtn.addEventListener("click", generateMom);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
+updateWorkflowMode();
 
 async function startRecording() {
   try {
@@ -55,6 +65,7 @@ async function startRecording() {
     await startLiveTranscription(stream);
     recorder.start();
     setStatus("Recording");
+    workflowMode.disabled = true;
     captureMode.disabled = true;
     speakerCount.disabled = true;
     startBtn.disabled = true;
@@ -63,9 +74,7 @@ async function startRecording() {
   } catch (error) {
     stopActiveCapture();
     setStatus(error.message || "Could not start recording");
-    captureMode.disabled = false;
-    speakerCount.disabled = false;
-    startBtn.disabled = false;
+    updateWorkflowMode();
     stopBtn.disabled = true;
   }
 }
@@ -74,6 +83,7 @@ function stopRecording() {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
     setStatus("Uploading audio");
+    workflowMode.disabled = true;
     stopBtn.disabled = true;
   }
 }
@@ -145,25 +155,40 @@ function stopLiveTranscription() {
 async function uploadRecording() {
   const mimeType = recorder && recorder.mimeType ? recorder.mimeType : "audio/webm";
   const blob = new Blob(chunks, { type: mimeType });
-  captureMode.disabled = false;
-  speakerCount.disabled = false;
+  updateWorkflowMode();
   if (!blob.size) {
     setStatus("No audio was recorded");
     startBtn.disabled = false;
     return;
   }
 
+  await uploadMeetingFile(blob, recordingFilename(mimeType));
+}
+
+async function uploadRecordedFile() {
+  const file = recordedFile.files[0];
+  if (!file) {
+    setStatus("Choose a recorded audio or video file");
+    return;
+  }
+  resetSessionOutput();
+  await uploadMeetingFile(file, file.name || "recorded-meeting");
+}
+
+async function uploadMeetingFile(file, filename) {
   const form = new FormData();
-  form.append("audio", blob, recordingFilename(mimeType));
+  form.append("audio", file, filename);
   const expectedSpeakers = Number(speakerCount.value);
   if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
 
+  setStatus("Uploading recording");
+  setUploadBusy(true);
   const response = await fetch("/api/meetings/audio", { method: "POST", body: form });
   if (!response.ok) {
     setStatus("Upload failed");
-    startBtn.disabled = false;
+    setUploadBusy(false);
     return;
   }
 
@@ -216,9 +241,8 @@ function renderState(data) {
 }
 
 function updateControls(data, finalTranscript) {
-  startBtn.disabled = data.status === "transcribing" || data.status === "generating";
-  captureMode.disabled = startBtn.disabled;
-  speakerCount.disabled = startBtn.disabled;
+  const busy = data.status === "transcribing" || data.status === "generating";
+  setUploadBusy(busy);
   momBtn.disabled = !finalTranscript.length || data.status === "transcribing" || data.status === "generating";
   saveSpeakersBtn.disabled = !finalTranscript.length;
   rememberVoices.disabled = !finalTranscript.length || !data.voiceprints_ready;
@@ -331,6 +355,40 @@ function resetSessionOutput() {
   momOutput.className = "mom mom-empty";
   momOutput.textContent = "Finalize the transcript, then click Draft Minutes to generate.";
   renderTranscript([], {});
+  updateWorkflowMode();
+}
+
+function updateWorkflowMode() {
+  const recorded = workflowMode.value === "recorded";
+  const recording = recorder && recorder.state === "recording";
+  realtimeSettings.forEach((element) => {
+    element.hidden = recorded;
+  });
+  recordedSettings.forEach((element) => {
+    element.hidden = !recorded;
+  });
+  startBtn.hidden = recorded;
+  stopBtn.hidden = recorded;
+  uploadRecordedBtn.hidden = !recorded;
+  workflowMode.disabled = Boolean(recording);
+  captureMode.disabled = recorded || Boolean(recording);
+  speakerCount.disabled = Boolean(recording);
+  startBtn.disabled = recorded || Boolean(recording);
+  uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
+  recordedFile.disabled = false;
+  workflowHint.textContent = recorded
+    ? "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching."
+    : "Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.";
+}
+
+function setUploadBusy(busy) {
+  const recorded = workflowMode.value === "recorded";
+  workflowMode.disabled = busy || (recorder && recorder.state === "recording");
+  captureMode.disabled = busy || recorded;
+  speakerCount.disabled = busy;
+  startBtn.disabled = busy || recorded;
+  uploadRecordedBtn.disabled = busy || !recorded || !recordedFile.files.length;
+  recordedFile.disabled = busy;
 }
 
 function mountCleanupGlow() {

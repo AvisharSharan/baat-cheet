@@ -62,6 +62,16 @@
             <p class="block-label">Capture Settings</p>
             <div class="field-stack">
               <div class="field-group">
+                <label class="field-label" for="workflowMode">Workflow</label>
+                <div class="select-wrap">
+                  <select id="workflowMode" aria-label="Meeting workflow">
+                    <option value="realtime">Real-time meeting</option>
+                    <option value="recorded">Recorded media</option>
+                  </select>
+                  <svg class="select-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+              </div>
+              <div class="field-group realtime-setting">
                 <label class="field-label" for="captureMode">Source</label>
                 <div class="select-wrap">
                   <select id="captureMode" aria-label="Capture source">
@@ -70,6 +80,10 @@
                   </select>
                   <svg class="select-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
+              </div>
+              <div class="field-group recorded-setting" hidden>
+                <label class="field-label" for="recordedFile">Audio or video file</label>
+                <input id="recordedFile" type="file" accept="audio/*,video/*,.webm,.m4a,.mp3,.mp4,.wav,.ogg,.mov,.mkv" />
               </div>
               <div class="field-group">
                 <label class="field-label" for="speakerCount">Speaker hint</label>
@@ -93,6 +107,12 @@
                 </span>
                 Stop & Finalize
               </button>
+              <button id="uploadRecordedBtn" class="btn btn-primary recorded-setting" type="button" hidden disabled>
+                <span class="btn-icon">
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1v8M4 4l3-3 3 3M2 11h10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                Upload Recording
+              </button>
               <button id="momBtn" class="btn btn-secondary" type="button" disabled>
                 <span class="btn-icon">
                   <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M2 7h7M2 11h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -111,7 +131,7 @@
             </a>
           </div>
 
-          <p class="sidebar-hint">Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.</p>
+          <p class="sidebar-hint" id="workflowHint">Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.</p>
         </aside>
 
         <section class="content-area">

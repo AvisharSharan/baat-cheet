@@ -5,6 +5,7 @@ Browser-based meeting recording with Sarvam transcription and Hugging Face Gemma
 ## Features
 
 - Record meeting tab audio plus microphone, or microphone only
+- Upload finished audio/video recordings for batch transcription
 - Upload the completed recording for Sarvam batch transcription with diarization
 - Review speaker-wise transcript turns and rename speaker labels
 - Generate structured Minutes of Meeting with Hugging Face Gemma
@@ -90,6 +91,7 @@ http://127.0.0.1:8000
 
 - Live captions stream while recording through Sarvam's streaming STT WebSocket.
 - The final transcript still uses Sarvam batch diarization after the recording is stopped and uploaded.
+- Use `Real-time meeting` for live capture and captions; use `Recorded media` for existing audio/video files, which is the more reliable path for voice matching.
 - The speaker hint is passed to the batch transcription job when provided.
 - MoM generation is extractive by prompt: Gemma is instructed not to invent owners, dates, decisions, or action items.
 - Meeting state is in memory, so sessions reset when the server restarts.
