@@ -1,6 +1,6 @@
 # Minutes of Meeting Tool
 
-Browser-based meeting recording with Sarvam transcription and Hugging Face Gemma minutes generation.
+Browser-based meeting recording with Sarvam transcription and local or hosted minutes generation.
 
 ## Features
 
@@ -8,7 +8,7 @@ Browser-based meeting recording with Sarvam transcription and Hugging Face Gemma
 - Upload finished audio/video recordings for batch transcription
 - Upload the completed recording for Sarvam batch transcription with diarization
 - Review speaker-wise transcript turns and rename speaker labels
-- Generate structured Minutes of Meeting with Hugging Face Gemma
+- Generate structured Minutes of Meeting with local Qwen or a configured hosted chat model
 - Export generated notes as Markdown or PDF
 - Temporary audio cleanup after transcription
 - FastAPI backend with a static frontend
@@ -28,7 +28,7 @@ Sarvam batch transcription + diarization
 Transcript review and speaker labels
       |
       v
-Hugging Face Gemma MoM generation
+Local Qwen or configured chat model MoM generation
       |
       v
 Markdown / PDF export
@@ -67,12 +67,19 @@ SARVAM_STREAM_SAMPLE_RATE=16000
 SARVAM_STREAM_MODEL=saaras:v3
 SARVAM_STREAM_MODE=transcribe
 
-HF_TOKEN=your_hugging_face_token
-HF_MOM_MODEL=google/gemma-3-27b-it
-HF_CHAT_BASE_URL=https://router.huggingface.co/v1
-HF_MOM_MAX_TOKENS=1200
-HF_MOM_TIMEOUT_S=240
-HF_MOM_RETRIES=2
+MOM_PROVIDER=ollama
+OLLAMA_MOM_MODEL=qwen2.5:7b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_NUM_CTX=8192
+MOM_MAX_TOKENS=1200
+MOM_TIMEOUT_S=240
+MOM_RETRIES=2
+
+# Optional hosted fallback:
+# MOM_PROVIDER=huggingface
+# HF_TOKEN=your_hugging_face_token
+# HF_MOM_MODEL=google/gemma-3-27b-it
+# HF_CHAT_BASE_URL=https://router.huggingface.co/v1
 ```
 
 Run the app:
@@ -93,7 +100,7 @@ http://127.0.0.1:8000
 - The final transcript still uses Sarvam batch diarization after the recording is stopped and uploaded.
 - Use `Real-time meeting` for live capture and captions; use `Recorded media` for existing audio/video files, which is the more reliable path for voice matching.
 - The speaker hint is passed to the batch transcription job when provided.
-- MoM generation is extractive by prompt: Gemma is instructed not to invent owners, dates, decisions, or action items.
+- MoM generation is extractive by prompt: the configured chat model is instructed not to invent owners, dates, decisions, or action items.
 - Meeting state is in memory, so sessions reset when the server restarts.
 
 ## Development

@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
 from .services.live_transcription import SarvamLiveTranscriptionClient, live_event_to_turn
-from .services.mom import HuggingFaceGemmaMomClient
+from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
 from .services.transcription import SarvamTranscriptionClient
 from .storage import MeetingStore, delete_temp_file
@@ -187,7 +187,7 @@ async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
     meeting.status = MeetingStatus.GENERATING
     store.update(meeting)
     try:
-        meeting.mom_markdown = await HuggingFaceGemmaMomClient().generate(meeting.transcript, meeting.speaker_names)
+        meeting.mom_markdown = await MomGenerationClient().generate(meeting.transcript, meeting.speaker_names)
         meeting.status = MeetingStatus.READY
         meeting.error = None
     except Exception as exc:

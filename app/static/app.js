@@ -323,7 +323,7 @@ async function saveSpeakers() {
 async function generateMom() {
   if (!meetingId) return;
   await saveSpeakers();
-  setStatus("Drafting minutes with Gemma");
+  setStatus("Drafting minutes");
   momBtn.disabled = true;
   const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
   renderState(await response.json());
