@@ -54,7 +54,7 @@ class FasterWhisperPyannoteTranscriptionClient:
 
     def _transcribe_sync(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
         segments = self._transcribe_with_faster_whisper(audio_path)
-        if os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() in {"none", "off", "0", "false"}:
+        if num_speakers == 1 or os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() in {"none", "off", "0", "false"}:
             return [
                 SpeakerTurn(
                     speaker="Speaker 1",

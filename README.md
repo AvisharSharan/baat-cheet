@@ -127,6 +127,8 @@ http://127.0.0.1:8000
 - Local live captions are preview-only and use faster-whisper on short audio chunks without diarization.
 - The final transcript uses faster-whisper for ASR and pyannote.audio for diarization.
 - For faster final transcription without speaker diarization, set `DIARIZATION_PROVIDER=none`.
+- Setting the speaker hint to `1 speaker` also skips pyannote diarization for that meeting.
+- Keep `VOICEPRINTING_ENABLED` unset unless you need remembered voice labels; voiceprinting is a separate post-processing step.
 - Use `Real-time meeting` for live capture; use `Recorded media` for existing audio/video files, which is the more reliable path for voice matching.
 - The speaker hint is passed to the batch transcription job when provided.
 - MoM generation is extractive by prompt: the configured chat model is instructed not to invent owners, dates, decisions, or action items.

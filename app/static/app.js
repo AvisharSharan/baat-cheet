@@ -368,7 +368,7 @@ function showMeeting() {
 function updateControls(data, finalTranscript) {
   const busy = data.status === "transcribing" || data.status === "generating";
   setUploadBusy(busy);
-  momBtn.disabled = !finalTranscript.length || data.status === "transcribing" || data.status === "generating";
+  momBtn.disabled = !finalTranscript.length || data.status === "generating";
   saveSpeakersBtn.disabled = !finalTranscript.length;
   rememberVoices.disabled = !finalTranscript.length || !data.voiceprints_ready;
   rememberVoices.title = voiceprintHint(data);

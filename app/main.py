@@ -214,9 +214,16 @@ async def transcribe_meeting(meeting_id: str) -> None:
             num_speakers=meeting.num_speakers,
         )
         speakers = sorted({turn.speaker for turn in meeting.transcript})
+        meeting.speaker_names = {speaker: speaker for speaker in speakers}
+        meeting.status = MeetingStatus.TRANSCRIBED
+        meeting.completed_at = datetime.now(timezone.utc)
+        meeting.error = None
+        store.update(meeting)
+
         meeting.speaker_embeddings = {}
         meeting.voiceprint_status = "processing"
         meeting.voiceprint_error = None
+        store.update(meeting)
         try:
             identifier = SpeakerIdentifier()
             meeting.speaker_embeddings = await identifier.extract_speaker_embeddings(
@@ -241,9 +248,6 @@ async def transcribe_meeting(meeting_id: str) -> None:
             meeting.speaker_names = {speaker: speaker for speaker in speakers}
             meeting.voiceprint_status = "failed"
             meeting.voiceprint_error = "Voiceprinting failed. Check the server log for details."
-        meeting.status = MeetingStatus.TRANSCRIBED
-        meeting.completed_at = datetime.now(timezone.utc)
-        meeting.error = None
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.completed_at = datetime.now(timezone.utc)
