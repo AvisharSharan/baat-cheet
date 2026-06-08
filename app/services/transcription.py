@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,8 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Iterable, List, Protocol
 
 from app.models import SpeakerTurn
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriptionError(RuntimeError):
@@ -209,7 +212,8 @@ def _is_cuda_runtime_error(exc: Exception) -> bool:
 
 
 def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
-    cache_key = f"{checkpoint}|{token or ''}|{id(pipeline_class)}"
+    requested_device = os.getenv("PYANNOTE_DEVICE", "cpu")
+    cache_key = f"{checkpoint}|{token or ''}|{requested_device}|{id(pipeline_class)}"
     if cache_key in _PYANNOTE_PIPELINE_CACHE:
         return _PYANNOTE_PIPELINE_CACHE[cache_key]
 
@@ -218,14 +222,17 @@ def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | No
     if token and token_arg:
         kwargs[token_arg] = token
     pipeline = pipeline_class.from_pretrained(checkpoint, **kwargs)
-    device = os.getenv("PYANNOTE_DEVICE")
-    if device and hasattr(pipeline, "to"):
+    device = requested_device.strip().lower()
+    if device and device != "cpu" and hasattr(pipeline, "to"):
         try:
             import torch
 
             pipeline.to(torch.device(device))
         except Exception as exc:
-            raise TranscriptionError(f"Could not move pyannote pipeline to {device}.") from exc
+            if _is_cuda_runtime_error(exc):
+                logger.warning("Could not move pyannote pipeline to %s; using CPU instead.", device)
+            else:
+                raise TranscriptionError(f"Could not move pyannote pipeline to {device}.") from exc
     _PYANNOTE_PIPELINE_CACHE[cache_key] = pipeline
     return pipeline
 

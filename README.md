@@ -93,6 +93,7 @@ LIVE_WHISPER_BEAM_SIZE=1
 LIVE_WHISPER_VAD_FILTER=0
 DIARIZATION_PROVIDER=pyannote
 PYANNOTE_DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+PYANNOTE_DEVICE=cpu
 HF_TOKEN=your_hugging_face_token
 
 MOM_PROVIDER=ollama
