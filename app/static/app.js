@@ -11,47 +11,59 @@ let recordingUrl = null;
 let liveTranscript = [];
 let cleanupOverlayActive = false;
 let cleanupGlow = null;
+let recTimerInterval = null;
+let recStartTime = null;
 const liveSampleRate = 16000;
 
-const workflowMode = document.querySelector("#workflowMode");
-const captureMode = document.querySelector("#captureMode");
+// DOM refs
+const workflowMode       = document.querySelector("#workflowMode");
+const modeBtns           = document.querySelectorAll(".mode-btn");
+const captureMode        = document.querySelector("#captureMode");
 const liveCaptionsToggle = document.querySelector("#liveCaptionsToggle");
-const realtimeSettings = document.querySelectorAll(".realtime-setting");
-const recordedSettings = document.querySelectorAll(".recorded-setting");
-const recordedFile = document.querySelector("#recordedFile");
-const uploadRecordedBtn = document.querySelector("#uploadRecordedBtn");
-const speakerCount = document.querySelector("#speakerCount");
-const startBtn = document.querySelector("#startBtn");
-const stopBtn = document.querySelector("#stopBtn");
-const momBtn = document.querySelector("#momBtn");
-const saveSpeakersBtn = document.querySelector("#saveSpeakersBtn");
-const statusText = document.querySelector("#statusText");
-const transcriptEl = document.querySelector("#transcript");
-const speakerEditor = document.querySelector("#speakerEditor");
-const rememberVoices = document.querySelector("#rememberVoices");
-const momOutput = document.querySelector("#momOutput");
-const exportLinks = document.querySelector("#exportLinks");
-const panelMinutes = document.querySelector(".panel-minutes");
-const speakerMetric = document.querySelector("#speakerMetric");
-const turnMetric = document.querySelector("#turnMetric");
-const wordMetric = document.querySelector("#wordMetric");
-const playbackSection = document.querySelector("#playbackSection");
-const recordingPlayback = document.querySelector("#recordingPlayback");
+const realtimeOnly       = document.querySelector(".realtime-only");
+const recordedOnly       = document.querySelector(".recorded-only");
+const recordedSettings   = document.querySelectorAll(".recorded-setting");
+const recordedFile       = document.querySelector("#recordedFile");
+const fileDropZone       = document.querySelector("#fileDropZone");
+const fileDropLabel      = document.querySelector("#fileDropLabel");
+const uploadRecordedBtn  = document.querySelector("#uploadRecordedBtn");
+const speakerCount       = document.querySelector("#speakerCount");
+const startBtn           = document.querySelector("#startBtn");
+const stopBtn            = document.querySelector("#stopBtn");
+const momBtn             = document.querySelector("#momBtn");
+const saveSpeakersBtn    = document.querySelector("#saveSpeakersBtn");
+const statusText         = document.querySelector("#statusText");
+const transcriptEl       = document.querySelector("#transcript");
+const speakerEditor      = document.querySelector("#speakerEditor");
+const speakerFooter      = document.querySelector("#speakerFooter");
+const rememberVoices     = document.querySelector("#rememberVoices");
+const momOutput          = document.querySelector("#momOutput");
+const exportLinks        = document.querySelector("#exportLinks");
+const panelMinutes       = document.querySelector(".panel-minutes");
+const speakerMetric      = document.querySelector("#speakerMetric");
+const turnMetric         = document.querySelector("#turnMetric");
+const wordMetric         = document.querySelector("#wordMetric");
+const playbackSection    = document.querySelector("#playbackSection");
+const recordingPlayback  = document.querySelector("#recordingPlayback");
 const downloadRecordingLink = document.querySelector("#downloadRecordingLink");
-const workflowHint = document.querySelector("#workflowHint");
-const transcriptSub = document.querySelector("#transcriptSub");
-const themeToggle = document.querySelector("#themeToggle");
-const themeToggleText = document.querySelector("#themeToggleText");
-const meetingName = document.querySelector("#meetingName");
-const newMeetingBtn = document.querySelector("#newMeetingBtn");
-const historyTabBtn = document.querySelector("#historyTabBtn");
-const refreshHistoryBtn = document.querySelector("#refreshHistoryBtn");
-const meetingView = document.querySelector("#meetingView");
-const historyView = document.querySelector("#historyView");
-const historyList = document.querySelector("#historyList");
+const workflowHint       = document.querySelector("#workflowHint");
+const transcriptSub      = document.querySelector("#transcriptSub");
+const themeToggle        = document.querySelector("#themeToggle");
+const meetingName        = document.querySelector("#meetingName");
+const newMeetingBtn      = document.querySelector("#newMeetingBtn");
+const historyTabBtn      = document.querySelector("#historyTabBtn");
+const refreshHistoryBtn  = document.querySelector("#refreshHistoryBtn");
+const meetingView        = document.querySelector("#meetingView");
+const historyView        = document.querySelector("#historyView");
+const historyList        = document.querySelector("#historyList");
+const recordingStatus    = document.querySelector("#recordingStatus");
+const recTimer           = document.querySelector("#recTimer");
+const transcriptBadge    = document.querySelector("#transcriptBadge");
+const emptyTranscriptMsg = document.querySelector("#emptyTranscriptMsg");
 
-workflowMode.addEventListener("change", updateWorkflowMode);
-recordedFile.addEventListener("change", updateWorkflowMode);
+// Init
+modeBtns.forEach(btn => btn.addEventListener("click", () => setWorkflowMode(btn.dataset.mode)));
+recordedFile.addEventListener("change", onFileChange);
 liveCaptionsToggle.addEventListener("change", updateLiveCaptionPreference);
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
@@ -62,52 +74,90 @@ themeToggle.addEventListener("click", toggleTheme);
 newMeetingBtn.addEventListener("click", startNewMeeting);
 historyTabBtn.addEventListener("click", showHistory);
 refreshHistoryBtn.addEventListener("click", loadHistory);
+
+// File drag-and-drop
+fileDropZone.addEventListener("dragover", (e) => { e.preventDefault(); fileDropZone.classList.add("drag-over"); });
+fileDropZone.addEventListener("dragleave", () => fileDropZone.classList.remove("drag-over"));
+fileDropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  fileDropZone.classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    recordedFile.files = dt.files;
+    onFileChange();
+  }
+});
+
 syncThemeToggle();
 syncLiveCaptionPreference();
-updateWorkflowMode();
+updateWorkflowUI();
 meetingName.value = defaultMeetingName();
 loadHistory();
 
+// ─── RECORDING ────────────────────────────────────────────────
 async function startRecording() {
   try {
-    const stream = captureMode.value === "meeting" ? await createMeetingCaptureStream() : await createMicrophoneStream();
+    const stream = captureMode.value === "meeting"
+      ? await createMeetingCaptureStream()
+      : await createMicrophoneStream();
     resetSessionOutput();
     chunks = [];
     recorder = new MediaRecorder(stream, getRecorderOptions());
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
-    };
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
       stopLiveTranscription();
       stopActiveCapture();
       renderRecordingPlayback();
       uploadRecording();
     };
-    if (liveCaptionsToggle.checked) {
-      await startLiveTranscription(stream);
-    }
+    if (liveCaptionsToggle.checked) await startLiveTranscription(stream);
     recorder.start();
-    setStatus(liveCaptionsToggle.checked ? "Recording" : "Recording - captions off");
-    workflowMode.disabled = true;
-    captureMode.disabled = true;
-    liveCaptionsToggle.disabled = true;
-    speakerCount.disabled = true;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    momBtn.disabled = true;
+    setStatus(liveCaptionsToggle.checked ? "Recording — live captions on" : "Recording");
+    setRecordingState(true);
   } catch (error) {
     stopActiveCapture();
     setStatus(error.message || "Could not start recording");
-    updateWorkflowMode();
+    updateWorkflowUI();
     stopBtn.disabled = true;
   }
+}
+
+function setRecordingState(active) {
+  workflowMode.disabled = active;
+  captureMode.disabled = active;
+  liveCaptionsToggle.disabled = active;
+  speakerCount.disabled = active;
+  startBtn.disabled = active;
+  stopBtn.disabled = !active;
+  momBtn.disabled = true;
+
+  // Show/hide recording timer
+  recordingStatus.hidden = !active;
+  if (active) {
+    recStartTime = Date.now();
+    updateRecTimer();
+    recTimerInterval = window.setInterval(updateRecTimer, 1000);
+  } else {
+    window.clearInterval(recTimerInterval);
+    recTimerInterval = null;
+  }
+}
+
+function updateRecTimer() {
+  if (!recStartTime) return;
+  const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  recTimer.textContent = `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function stopRecording() {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
-    setStatus("Uploading audio");
-    workflowMode.disabled = true;
+    setStatus("Uploading audio…");
+    setRecordingState(false);
     stopBtn.disabled = true;
   }
 }
@@ -117,7 +167,6 @@ async function startLiveTranscription(stream) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   liveAudioContext = new AudioContextClass();
   await liveAudioContext.audioWorklet.addModule("/static/pcm-worklet.js");
-
   const source = liveAudioContext.createMediaStreamSource(stream);
   const processor = new AudioWorkletNode(liveAudioContext, "pcm-capture-processor");
   const mutedOutput = liveAudioContext.createGain();
@@ -141,15 +190,11 @@ async function createLiveSocket() {
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = liveTranscript.concat(payload.turns);
       renderTranscript(liveTranscript, { Live: "Live" });
-      setStatus("Recording - live captions");
+      setStatus("Recording — live captions");
     }
-    if (payload.type === "error") {
-      setStatus(`Live captions failed: ${payload.message}`);
-    }
+    if (payload.type === "error") setStatus(`Live captions failed: ${payload.message}`);
   };
-  socket.onclose = () => {
-    liveSocket = null;
-  };
+  socket.onclose = () => { liveSocket = null; };
   await new Promise((resolve, reject) => {
     socket.onopen = resolve;
     socket.onerror = () => reject(new Error("Live transcription connection failed"));
@@ -159,17 +204,9 @@ async function createLiveSocket() {
 }
 
 function stopLiveTranscription() {
-  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-    liveSocket.send("stop");
-  }
+  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send("stop");
   if (liveAudioContext) {
-    liveAudioNodes.forEach((node) => {
-      try {
-        node.disconnect();
-      } catch (error) {
-        // Node may already be disconnected during browser shutdown.
-      }
-    });
+    liveAudioNodes.forEach((node) => { try { node.disconnect(); } catch (e) {} });
     liveAudioNodes = [];
     liveAudioContext.close();
     liveAudioContext = null;
@@ -179,22 +216,14 @@ function stopLiveTranscription() {
 async function uploadRecording() {
   const mimeType = recorder && recorder.mimeType ? recorder.mimeType : "audio/webm";
   const blob = new Blob(chunks, { type: mimeType });
-  updateWorkflowMode();
-  if (!blob.size) {
-    setStatus("No audio was recorded");
-    startBtn.disabled = false;
-    return;
-  }
-
+  updateWorkflowUI();
+  if (!blob.size) { setStatus("No audio was recorded"); startBtn.disabled = false; return; }
   await uploadMeetingFile(blob, recordingFilename(mimeType));
 }
 
 async function uploadRecordedFile() {
   const file = recordedFile.files[0];
-  if (!file) {
-    setStatus("Choose a recorded audio or video file");
-    return;
-  }
+  if (!file) { setStatus("Choose a recorded audio or video file"); return; }
   resetSessionOutput();
   await uploadMeetingFile(file, file.name || "recorded-meeting");
 }
@@ -206,23 +235,18 @@ async function uploadMeetingFile(file, filename) {
   if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
-  if (meetingName.value.trim()) {
-    form.append("meeting_name", meetingName.value.trim());
-  }
+  if (meetingName.value.trim()) form.append("meeting_name", meetingName.value.trim());
 
-  setStatus("Uploading recording");
+  setStatus("Uploading recording…");
   setUploadBusy(true);
+
   const response = await fetch("/api/meetings/audio", { method: "POST", body: form });
-  if (!response.ok) {
-    setStatus("Upload failed");
-    setUploadBusy(false);
-    return;
-  }
+  if (!response.ok) { setStatus("Upload failed"); setUploadBusy(false); return; }
 
   const data = await response.json();
   meetingId = data.id;
   meetingName.value = data.name || meetingName.value;
-  setStatus("Transcribing with Sarvam");
+  setStatus("Transcribing with Sarvam…");
   showMeeting();
   loadHistory();
   pollStatus();
@@ -247,33 +271,29 @@ function renderState(data) {
   setStatus(statusLabel(data));
   const finalTranscript = data.transcript || [];
   const keepLiveTranscript = data.status === "transcribing" && finalTranscript.length === 0 && liveTranscript.length > 0;
-  if (finalTranscript.length > 0) {
-    liveTranscript = [];
-    cleanupOverlayActive = false;
-    destroyCleanupGlow();
-  }
-  if (keepLiveTranscript && cleanupOverlayActive) {
-    updateControls(data, finalTranscript);
-    return;
-  }
+  if (finalTranscript.length > 0) { liveTranscript = []; cleanupOverlayActive = false; destroyCleanupGlow(); }
+  if (keepLiveTranscript && cleanupOverlayActive) { updateControls(data, finalTranscript); return; }
   renderTranscript(
     keepLiveTranscript ? liveTranscript : finalTranscript,
     keepLiveTranscript ? { Live: "Live captions" } : data.speaker_names || {},
-    {
-      cleanupOverlay: keepLiveTranscript,
-      skipSpeakerEditor: keepLiveTranscript,
-    },
+    { cleanupOverlay: keepLiveTranscript, skipSpeakerEditor: keepLiveTranscript }
   );
   cleanupOverlayActive = keepLiveTranscript;
   if (data.mom_markdown) {
     setMomGenerating(false);
     momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
-    exportLinks.innerHTML = `<a href="/api/meetings/${data.id}/export.md">Markdown</a><a href="/api/meetings/${data.id}/export.pdf">PDF</a>`;
+    exportLinks.innerHTML = `
+      <a href="/api/meetings/${data.id}/export.md">
+        <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+        MD
+      </a>
+      <a href="/api/meetings/${data.id}/export.pdf">
+        <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+        PDF
+      </a>`;
   }
-  if (data.status !== "generating") {
-    setMomGenerating(false);
-  }
+  if (data.status !== "generating") setMomGenerating(false);
   updateControls(data, finalTranscript);
 }
 
@@ -289,29 +309,26 @@ async function loadHistory() {
 
 function renderHistory(meetings) {
   if (!meetings.length) {
-    historyList.innerHTML = `<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><path d="M16 9v8l5 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><strong>No meeting history yet</strong><span>Create or upload a meeting to see its name, time, speakers, labels, transcript, and minutes here.</span></div>`;
+    historyList.innerHTML = `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="1.2" opacity="0.35"/><path d="M20 11v10l6 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg></div><strong>No meetings yet</strong><span>Completed meetings will appear here with their transcript and minutes.</span></div>`;
     return;
   }
-
-  historyList.innerHTML = meetings
-    .map((meeting) => {
-      const speakers = meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet";
-      const active = meeting.id === meetingId ? " active" : "";
-      return `<button class="history-item${active}" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
-        <div class="history-item-main">
-          <span class="history-name">${escapeHtml(meeting.name)}</span>
-          <span class="history-meta">${escapeHtml(formatDateTime(meeting.created_at))}</span>
-        </div>
-        <div class="history-badges">
-          <span>${escapeHtml(statusLabel(meeting))}</span>
-          <span>${meeting.transcript_turns} turns</span>
-          <span>${meeting.word_count} words</span>
-          ${meeting.mom_available ? "<span>Minutes</span>" : ""}
-        </div>
-        <div class="history-speakers">${escapeHtml(speakers)}</div>
-      </button>`;
-    })
-    .join("");
+  historyList.innerHTML = meetings.map((meeting) => {
+    const speakers = meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet";
+    const active = meeting.id === meetingId ? " active" : "";
+    return `<button class="history-item${active}" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
+      <div class="history-item-main">
+        <span class="history-name">${escapeHtml(meeting.name)}</span>
+        <span class="history-meta">${escapeHtml(formatDateTime(meeting.created_at))}</span>
+      </div>
+      <div class="history-badges">
+        <span>${escapeHtml(statusLabel(meeting))}</span>
+        <span>${meeting.transcript_turns} turns</span>
+        <span>${meeting.word_count} words</span>
+        ${meeting.mom_available ? "<span>Minutes ✓</span>" : ""}
+      </div>
+      <div class="history-speakers">${escapeHtml(speakers)}</div>
+    </button>`;
+  }).join("");
 
   historyList.querySelectorAll(".history-item").forEach((item) => {
     item.addEventListener("click", () => openHistoryMeeting(item.dataset.meetingId));
@@ -321,10 +338,7 @@ function renderHistory(meetings) {
 async function openHistoryMeeting(id) {
   if (!id) return;
   const response = await fetch(`/api/meetings/${id}/status`);
-  if (!response.ok) {
-    setStatus("Meeting not found");
-    return;
-  }
+  if (!response.ok) { setStatus("Meeting not found"); return; }
   renderState(await response.json());
   showMeeting();
   loadHistory();
@@ -365,45 +379,49 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   if (!options.cleanupOverlay) destroyCleanupGlow();
   if (!transcript.length) {
     transcriptEl.className = "transcript transcript-empty";
-    transcriptEl.innerHTML = `<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
+    transcriptEl.innerHTML = `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/><path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
     speakerEditor.innerHTML = "";
+    speakerFooter.hidden = true;
     rememberVoices.checked = false;
     rememberVoices.disabled = true;
-    rememberVoices.title = "Voiceprints become available after final transcription.";
     updateMetrics([]);
+    if (transcriptBadge) transcriptBadge.hidden = true;
     return;
   }
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
   updateMetrics(transcript);
-  speakerEditor.innerHTML = options.skipSpeakerEditor
-    ? ""
-    : speakers
-        .map((speaker) => {
-          const value = speakerNames[speaker] || speaker;
-          return `<label>${escapeHtml(speaker)}<input data-speaker="${escapeHtml(speaker)}" value="${escapeHtml(value)}" /></label>`;
-        })
-        .join("");
+
+  speakerEditor.innerHTML = options.skipSpeakerEditor ? "" : speakers.map((speaker) => {
+    const value = speakerNames[speaker] || speaker;
+    return `<label>${escapeHtml(speaker)}<input data-speaker="${escapeHtml(speaker)}" value="${escapeHtml(value)}" /></label>`;
+  }).join("");
+
+  speakerFooter.hidden = options.skipSpeakerEditor || !speakers.length;
+
+  // Show badge with turn count
+  if (transcriptBadge) {
+    transcriptBadge.textContent = `${transcript.length} turns`;
+    transcriptBadge.hidden = false;
+  }
 
   transcriptEl.className = "transcript";
   const cleanupOverlay = options.cleanupOverlay
     ? '<div class="cleanup-overlay" aria-live="polite"><div class="cleanup-dots"></div><div class="cleanup-glow"></div><div class="cleanup-text">Cleaning up with Sarvam</div></div>'
     : "";
-  transcriptEl.innerHTML = cleanupOverlay + transcript
-    .map((turn) => {
-      const label = speakerNames[turn.speaker] || turn.speaker;
-      return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
-    })
-    .join("");
+  transcriptEl.innerHTML = cleanupOverlay + transcript.map((turn) => {
+    const label = speakerNames[turn.speaker] || turn.speaker;
+    return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
+  }).join("");
   if (options.cleanupOverlay) mountCleanupGlow();
 }
 
 function updateMetrics(transcript) {
   const speakers = new Set(transcript.map((turn) => turn.speaker));
   const words = transcript.reduce((count, turn) => count + turn.text.trim().split(/\s+/).filter(Boolean).length, 0);
-  speakerMetric.textContent = String(speakers.size);
-  turnMetric.textContent = String(transcript.length);
-  wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : String(words);
+  speakerMetric.textContent = speakers.size || "—";
+  turnMetric.textContent = transcript.length || "—";
+  wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : (words || "—");
 }
 
 function voiceprintHint(data) {
@@ -431,7 +449,7 @@ async function saveSpeakers() {
 async function generateMom() {
   if (!meetingId) return;
   await saveSpeakers();
-  setStatus("Drafting minutes");
+  setStatus("Drafting minutes…");
   momBtn.disabled = true;
   setMomGenerating(true);
   const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
@@ -456,8 +474,14 @@ function setMomGenerating(active) {
 
 function setStatus(text) {
   statusText.textContent = text;
-  const normalized = String(text).toLowerCase();
-  document.body.dataset.recordingState = normalized.includes("recording") ? "recording" : "";
+  const n = String(text).toLowerCase();
+  if (n.includes("recording")) {
+    document.body.dataset.state = "recording";
+  } else if (n.includes("upload") || n.includes("transcrib") || n.includes("drafting")) {
+    document.body.dataset.state = "processing";
+  } else {
+    document.body.dataset.state = "";
+  }
 }
 
 function statusLabel(data) {
@@ -476,30 +500,47 @@ function resetSessionOutput() {
   cleanupOverlayActive = false;
   destroyCleanupGlow();
   setMomGenerating(false);
-  if (pollTimer) {
-    window.clearInterval(pollTimer);
-    pollTimer = null;
-  }
+  if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
   clearRecordingPlayback();
   exportLinks.innerHTML = "";
   momOutput.className = "mom mom-empty";
-  momOutput.textContent = "Finalize the transcript, then click Draft Minutes to generate.";
+  momOutput.textContent = "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";
   renderTranscript([], {});
-  updateWorkflowMode();
+  updateWorkflowUI();
 }
 
-function updateWorkflowMode() {
+// ─── WORKFLOW MODE ─────────────────────────────────────────────
+function setWorkflowMode(mode) {
+  workflowMode.value = mode;
+  modeBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
+  updateWorkflowUI();
+}
+
+function onFileChange() {
+  const file = recordedFile.files[0];
+  if (file) {
+    fileDropLabel.textContent = file.name;
+    fileDropZone.style.borderStyle = "solid";
+    fileDropZone.style.borderColor = "var(--gold)";
+  } else {
+    fileDropLabel.textContent = "Drop file or click to browse";
+    fileDropZone.style.borderStyle = "";
+    fileDropZone.style.borderColor = "";
+  }
+  updateWorkflowUI();
+}
+
+function updateWorkflowUI() {
   const recorded = workflowMode.value === "recorded";
   const recording = recorder && recorder.state === "recording";
-  realtimeSettings.forEach((element) => {
-    element.hidden = recorded;
-  });
-  recordedSettings.forEach((element) => {
-    element.hidden = !recorded;
-  });
+
+  realtimeOnly.hidden = recorded;
+  recordedOnly.hidden = !recorded;
+
   startBtn.hidden = recorded;
   stopBtn.hidden = recorded;
   uploadRecordedBtn.hidden = !recorded;
+
   workflowMode.disabled = Boolean(recording);
   captureMode.disabled = recorded || Boolean(recording);
   liveCaptionsToggle.disabled = recorded || Boolean(recording);
@@ -507,15 +548,17 @@ function updateWorkflowMode() {
   startBtn.disabled = recorded || Boolean(recording);
   uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
   recordedFile.disabled = false;
+
+  // Update hint text
   if (recorded) {
     workflowHint.textContent = "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching.";
-    transcriptSub.textContent = "Final transcript after upload";
+    if (transcriptSub) transcriptSub.textContent = "Final transcript after upload";
   } else if (liveCaptionsToggle.checked) {
-    workflowHint.textContent = "Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.";
-    transcriptSub.textContent = "Live captions during recording, final transcript after upload";
+    workflowHint.textContent = "Live captions stream during recording. Final audio uploaded for Sarvam diarization after stop.";
+    if (transcriptSub) transcriptSub.textContent = "Live captions during recording, final transcript after upload";
   } else {
     workflowHint.textContent = "Live captions are off. Final audio is still uploaded for Sarvam diarization after stop.";
-    transcriptSub.textContent = "Live captions off, final transcript after upload";
+    if (transcriptSub) transcriptSub.textContent = "Live captions off — final transcript after upload";
   }
   refreshEmptyTranscriptMessage();
 }
@@ -531,19 +574,15 @@ function setUploadBusy(busy) {
   recordedFile.disabled = busy;
 }
 
+// ─── CLEANUP GLOW ─────────────────────────────────────────────
 function mountCleanupGlow() {
   if (cleanupGlow) return;
   const target = transcriptEl.querySelector(".cleanup-dots");
   if (!target || !window.DottedGlowBackground) return;
   cleanupGlow = new window.DottedGlowBackground(target, {
-    gap: 13,
-    radius: 1.7,
-    color: "rgba(224,187,106,0.66)",
-    glowColor: "rgba(224,187,106,0.92)",
-    opacity: 0.78,
-    speedMin: 0.34,
-    speedMax: 1.2,
-    speedScale: 0.9,
+    gap: 13, radius: 1.7,
+    color: "rgba(200,164,74,0.6)", glowColor: "rgba(200,164,74,0.88)",
+    opacity: 0.75, speedMin: 0.34, speedMax: 1.2, speedScale: 0.9,
   });
 }
 
@@ -553,18 +592,17 @@ function destroyCleanupGlow() {
   cleanupGlow = null;
 }
 
+// ─── AUDIO UTILS ──────────────────────────────────────────────
 function downsampleToPcm16(float32, inputSampleRate, outputSampleRate) {
-  if (inputSampleRate === outputSampleRate) {
-    return floatToPcm16(float32);
-  }
+  if (inputSampleRate === outputSampleRate) return floatToPcm16(float32);
   const ratio = inputSampleRate / outputSampleRate;
   const outputLength = Math.floor(float32.length / ratio);
   const output = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i += 1) {
+  for (let i = 0; i < outputLength; i++) {
     const start = Math.floor(i * ratio);
     const end = Math.min(Math.floor((i + 1) * ratio), float32.length);
     let sum = 0;
-    for (let j = start; j < end; j += 1) sum += float32[j];
+    for (let j = start; j < end; j++) sum += float32[j];
     output[i] = sum / Math.max(1, end - start);
   }
   return floatToPcm16(output);
@@ -572,7 +610,7 @@ function downsampleToPcm16(float32, inputSampleRate, outputSampleRate) {
 
 function floatToPcm16(float32) {
   const pcm = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i += 1) {
+  for (let i = 0; i < float32.length; i++) {
     const sample = Math.max(-1, Math.min(1, float32[i]));
     pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
   }
@@ -592,10 +630,7 @@ function renderRecordingPlayback() {
 }
 
 function clearRecordingPlayback() {
-  if (recordingUrl) {
-    URL.revokeObjectURL(recordingUrl);
-    recordingUrl = null;
-  }
+  if (recordingUrl) { URL.revokeObjectURL(recordingUrl); recordingUrl = null; }
   recordingPlayback.removeAttribute("src");
   recordingPlayback.load();
   downloadRecordingLink.removeAttribute("href");
@@ -611,43 +646,31 @@ async function createMicrophoneStream() {
 }
 
 async function createMeetingCaptureStream() {
-  const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-    audio: true,
-  });
+  const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
   const displayAudioTracks = displayStream.getAudioTracks();
   if (!displayAudioTracks.length) {
     displayStream.getTracks().forEach((track) => track.stop());
     throw new Error("No meeting audio was shared");
   }
-
   const micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
-
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   activeAudioContext = new AudioContextClass();
   const destination = activeAudioContext.createMediaStreamDestination();
   activeAudioContext.createMediaStreamSource(new MediaStream(displayAudioTracks)).connect(destination);
   activeAudioContext.createMediaStreamSource(micStream).connect(destination);
-
   activeStreams = [displayStream, micStream, destination.stream];
   displayStream.getTracks().forEach((track) => {
-    track.onended = () => {
-      if (recorder && recorder.state !== "inactive") stopRecording();
-    };
+    track.onended = () => { if (recorder && recorder.state !== "inactive") stopRecording(); };
   });
-
   return destination.stream;
 }
 
 function stopActiveCapture() {
   activeStreams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
   activeStreams = [];
-  if (activeAudioContext) {
-    activeAudioContext.close();
-    activeAudioContext = null;
-  }
+  if (activeAudioContext) { activeAudioContext.close(); activeAudioContext = null; }
 }
 
 function getRecorderOptions() {
@@ -660,6 +683,7 @@ function recordingFilename(mimeType) {
   return mimeType.includes("mp4") ? "meeting-recording.mp4" : "meeting-recording.webm";
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────
 function defaultMeetingName() {
   const now = new Date();
   return `Meeting ${now.toLocaleDateString([], { month: "short", day: "numeric" })} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
@@ -668,20 +692,15 @@ function defaultMeetingName() {
 function formatDateTime(value) {
   if (!value) return "Time unavailable";
   return new Date(value).toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
 function escapeHtml(value) {
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
 function toggleTheme() {
@@ -698,16 +717,14 @@ function toggleTheme() {
 
 function syncThemeToggle() {
   const light = document.documentElement.dataset.theme === "light";
-  themeToggle.setAttribute("aria-pressed", String(light));
   themeToggle.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
   themeToggle.title = light ? "Switch to dark theme" : "Switch to light theme";
-  themeToggleText.textContent = light ? "Dark" : "Light";
 }
 
 function updateLiveCaptionPreference() {
   localStorage.setItem("momLiveCaptions", liveCaptionsToggle.checked ? "on" : "off");
   if (!liveCaptionsToggle.checked) liveTranscript = [];
-  updateWorkflowMode();
+  updateWorkflowUI();
 }
 
 function syncLiveCaptionPreference() {
@@ -715,16 +732,13 @@ function syncLiveCaptionPreference() {
 }
 
 function emptyTranscriptMessage() {
-  if (workflowMode.value === "recorded") {
-    return "Upload a recording to create a Sarvam diarized transcript.";
-  }
+  if (workflowMode.value === "recorded") return "Upload a recording to create a Sarvam diarized transcript.";
   return liveCaptionsToggle.checked
     ? "Start recording to see live captions, then stop to finalize with Sarvam diarization."
-    : "Start recording without live captions, then stop to create the Sarvam diarized transcript.";
+    : "Start recording — live captions are off. Stop to create the diarized transcript.";
 }
 
 function refreshEmptyTranscriptMessage() {
-  if (!transcriptEl.classList.contains("transcript-empty")) return;
-  const emptyMessage = transcriptEl.querySelector(".empty-state span");
-  if (emptyMessage) emptyMessage.textContent = emptyTranscriptMessage();
+  const msg = document.querySelector("#emptyTranscriptMsg");
+  if (msg) msg.textContent = emptyTranscriptMessage();
 }
