@@ -68,11 +68,16 @@ class FasterWhisperPyannoteTranscriptionClient:
         return _assign_speakers_to_segments(segments, diarization)
 
     def _transcribe_with_faster_whisper(self, audio_path: str) -> List[Dict[str, Any]]:
-        model = _get_faster_whisper_model(
-            self.whisper_model,
-            self.whisper_device,
-            self.whisper_compute_type,
-        )
+        try:
+            model = _get_faster_whisper_model(
+                self.whisper_model,
+                self.whisper_device,
+                self.whisper_compute_type,
+            )
+        except TranscriptionError:
+            if self.whisper_device.strip().lower() == "cpu" or not _env_bool("FASTER_WHISPER_CPU_FALLBACK", True):
+                raise
+            model = _get_faster_whisper_model(self.whisper_model, "cpu", "int8")
         segments, _ = model.transcribe(
             audio_path,
             beam_size=_env_int("FASTER_WHISPER_BEAM_SIZE", 1),

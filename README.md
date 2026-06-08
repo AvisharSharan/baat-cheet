@@ -83,6 +83,7 @@ TRANSCRIPTION_PROVIDER=local
 FASTER_WHISPER_MODEL=base
 FASTER_WHISPER_DEVICE=cpu
 FASTER_WHISPER_COMPUTE_TYPE=int8
+FASTER_WHISPER_CPU_FALLBACK=1
 FASTER_WHISPER_VAD_FILTER=1
 FASTER_WHISPER_BEAM_SIZE=1
 LIVE_WHISPER_MODEL=tiny
@@ -129,6 +130,7 @@ http://127.0.0.1:8000
 - For faster final transcription without speaker diarization, set `DIARIZATION_PROVIDER=none`.
 - Setting the speaker hint to `1 speaker` also skips pyannote diarization for that meeting.
 - Keep `VOICEPRINTING_ENABLED` unset unless you need remembered voice labels; voiceprinting is a separate post-processing step.
+- If CUDA/cuBLAS/cuDNN is missing, faster-whisper falls back to CPU when `FASTER_WHISPER_CPU_FALLBACK=1`.
 - Use `Real-time meeting` for live capture; use `Recorded media` for existing audio/video files, which is the more reliable path for voice matching.
 - The speaker hint is passed to the batch transcription job when provided.
 - MoM generation is extractive by prompt: the configured chat model is instructed not to invent owners, dates, decisions, or action items.
