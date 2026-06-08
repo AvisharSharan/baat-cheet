@@ -4,6 +4,7 @@ import asyncio
 import logging
 import shutil
 import tempfile
+import wave
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -15,10 +16,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
-from .services.live_transcription import SarvamLiveTranscriptionClient, live_event_to_turn
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
-from .services.transcription import SarvamTranscriptionClient
+from .services.transcription import create_transcription_client, transcribe_live_preview
 from .storage import MeetingStore, delete_temp_file
 
 load_dotenv()
@@ -38,6 +38,60 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.websocket("/api/live/transcribe")
+async def live_transcribe(websocket: WebSocket) -> None:
+    await websocket.accept()
+    sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
+    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "3"))
+    bytes_per_chunk = sample_rate * 2 * max(2, chunk_seconds)
+    pcm_buffer = bytearray()
+    sequence = 0
+
+    async def _flush() -> None:
+        nonlocal sequence
+        if not pcm_buffer:
+            return
+        sequence += 1
+        wav_path = _write_pcm_wav(bytes(pcm_buffer), sample_rate, f"live-{sequence}")
+        pcm_buffer.clear()
+        try:
+            turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
+            if turns:
+                await websocket.send_json(
+                    {
+                        "type": "transcript",
+                        "turns": [turn.model_dump(mode="json") for turn in turns],
+                    }
+                )
+        finally:
+            delete_temp_file(str(wav_path))
+
+    try:
+        while True:
+            message = await websocket.receive()
+            if message.get("text") == "stop":
+                await _flush()
+                break
+            chunk = message.get("bytes")
+            if not chunk:
+                continue
+            pcm_buffer.extend(chunk)
+            if len(pcm_buffer) >= bytes_per_chunk:
+                await _flush()
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @app.post("/api/meetings/audio", response_model=MeetingCreateResponse)
@@ -67,95 +121,6 @@ async def upload_audio(
     store.add(meeting)
     background_tasks.add_task(transcribe_meeting, meeting_id)
     return MeetingCreateResponse(id=meeting.id, name=meeting.name, status=meeting.status)
-
-
-@app.websocket("/api/live/transcribe")
-async def live_transcribe(websocket: WebSocket) -> None:
-    await websocket.accept()
-    meeting_id = uuid4().hex
-    meeting = MeetingState(
-        id=meeting_id,
-        name=f"Live meeting {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        status=MeetingStatus.TRANSCRIBING,
-        visible_in_history=False,
-        speaker_names={"Live": "Live"},
-    )
-    store.add(meeting)
-    await websocket.send_json({"type": "state", "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
-
-    audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=24)
-
-    async def audio_chunks():
-        while True:
-            chunk = await audio_queue.get()
-            if chunk is None:
-                return
-            yield chunk
-
-    async def push_live_events() -> None:
-        turn_index = 0
-        async for event in SarvamLiveTranscriptionClient().stream(audio_chunks()):
-            if event.type == "event":
-                await websocket.send_json({"type": "speech_event", "event": event.event})
-                continue
-            if event.type != "transcript" or not event.text:
-                continue
-            turn_index += 1
-            turn = live_event_to_turn(event, turn_index)
-            current = store.get(meeting_id)
-            current.transcript.append(turn)
-            current.speaker_names = {"Live": current.speaker_names.get("Live", "Live")}
-            store.update(current)
-            await websocket.send_json(
-                {
-                    "type": "transcript",
-                    "turns": [turn.model_dump(mode="json")],
-                    "meeting": MeetingStatusResponse.from_state(current).model_dump(mode="json"),
-                }
-            )
-
-    event_task = asyncio.create_task(push_live_events())
-    try:
-        while True:
-            message = await websocket.receive()
-            if message.get("text") == "stop":
-                await audio_queue.put(None)
-                meeting = store.get(meeting_id)
-                meeting.status = MeetingStatus.TRANSCRIBED
-                meeting.completed_at = datetime.now(timezone.utc)
-                store.update(meeting)
-                await websocket.send_json({"type": "state", "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
-                break
-
-            chunk = message.get("bytes")
-            if chunk:
-                try:
-                    audio_queue.put_nowait(chunk)
-                except asyncio.QueueFull:
-                    await websocket.send_json({"type": "warning", "message": "Live audio buffer is full; dropping a short chunk."})
-            if event_task.done():
-                event_task.result()
-
-    except WebSocketDisconnect:
-        pass
-    except Exception as exc:
-        meeting = store.get(meeting_id)
-        meeting.status = MeetingStatus.FAILED
-        meeting.completed_at = datetime.now(timezone.utc)
-        meeting.error = str(exc)
-        store.update(meeting)
-        try:
-            await websocket.send_json({"type": "error", "message": str(exc), "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
-        except Exception:
-            pass
-    finally:
-        await audio_queue.put(None)
-        event_task.cancel()
-        await asyncio.gather(event_task, return_exceptions=True)
-        try:
-            await websocket.close()
-        except Exception:
-            pass
 
 
 @app.get("/api/meetings", response_model=list[MeetingHistoryItem])
@@ -240,7 +205,7 @@ async def transcribe_meeting(meeting_id: str) -> None:
     store.update(meeting)
 
     try:
-        meeting.transcript = await SarvamTranscriptionClient().transcribe(
+        meeting.transcript = await create_transcription_client().transcribe(
             meeting.audio_path or "",
             num_speakers=meeting.num_speakers,
         )
@@ -283,7 +248,6 @@ async def transcribe_meeting(meeting_id: str) -> None:
         delete_temp_file(meeting.audio_path)
         meeting.audio_path = None
         store.update(meeting)
-        await asyncio.sleep(0)
 
 
 def _get_meeting(meeting_id: str) -> MeetingState:
@@ -298,3 +262,13 @@ def _meeting_name(raw_name: str | None, meeting_id: str) -> str:
     if name:
         return name[:120]
     return f"Meeting {datetime.now().strftime('%Y-%m-%d %H:%M')} ({meeting_id[:6]})"
+
+
+def _write_pcm_wav(pcm_bytes: bytes, sample_rate: int, stem: str) -> Path:
+    path = TEMP_DIR / f"{stem}-{uuid4().hex}.wav"
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm_bytes)
+    return path
