@@ -44,10 +44,11 @@ async def index() -> FileResponse:
 async def live_transcribe(websocket: WebSocket) -> None:
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
-    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "3"))
+    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "2"))
     bytes_per_chunk = sample_rate * 2 * max(2, chunk_seconds)
     pcm_buffer = bytearray()
     sequence = 0
+    await websocket.send_json({"type": "state", "message": "Local captions connected"})
 
     async def _flush() -> None:
         nonlocal sequence
@@ -57,6 +58,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
         wav_path = _write_pcm_wav(bytes(pcm_buffer), sample_rate, f"live-{sequence}")
         pcm_buffer.clear()
         try:
+            await websocket.send_json({"type": "state", "message": "Processing local caption chunk"})
             turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
             if turns:
                 await websocket.send_json(
@@ -65,6 +67,8 @@ async def live_transcribe(websocket: WebSocket) -> None:
                         "turns": [turn.model_dump(mode="json") for turn in turns],
                     }
                 )
+            else:
+                await websocket.send_json({"type": "state", "message": "Listening for speech"})
         finally:
             delete_temp_file(str(wav_path))
 

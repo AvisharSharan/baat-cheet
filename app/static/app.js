@@ -183,10 +183,13 @@ async function startLiveTranscription(stream) {
 
 async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}`);
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=2`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
     const payload = JSON.parse(event.data);
+    if (payload.type === "state" && payload.message) {
+      setStatus(payload.message);
+    }
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = liveTranscript.concat(payload.turns);
       renderTranscript(liveTranscript, { Live: "Live" }, { skipSpeakerEditor: true });

@@ -128,14 +128,15 @@ class FasterWhisperPyannoteTranscriptionClient:
 
 def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
     model = _get_faster_whisper_model(
-        os.getenv("LIVE_WHISPER_MODEL") or os.getenv("FASTER_WHISPER_MODEL", "base"),
+        os.getenv("LIVE_WHISPER_MODEL") or "tiny",
         os.getenv("FASTER_WHISPER_DEVICE", "cpu"),
         os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8"),
     )
     segments, _ = model.transcribe(
         audio_path,
         beam_size=_env_int("LIVE_WHISPER_BEAM_SIZE", 1),
-        vad_filter=_env_bool("LIVE_WHISPER_VAD_FILTER", True),
+        vad_filter=_env_bool("LIVE_WHISPER_VAD_FILTER", False),
+        condition_on_previous_text=False,
     )
     return [
         SpeakerTurn(
