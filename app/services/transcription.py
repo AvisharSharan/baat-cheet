@@ -127,11 +127,15 @@ class FasterWhisperPyannoteTranscriptionClient:
 
 
 def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
-    model = _get_faster_whisper_model(
-        os.getenv("LIVE_WHISPER_MODEL") or "tiny",
-        os.getenv("FASTER_WHISPER_DEVICE", "cpu"),
-        os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8"),
-    )
+    model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
+    device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
+    compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
+    try:
+        model = _get_faster_whisper_model(model_name, device, compute_type)
+    except TranscriptionError:
+        if device.strip().lower() == "cpu":
+            raise
+        model = _get_faster_whisper_model(model_name, "cpu", "int8")
     segments, _ = model.transcribe(
         audio_path,
         beam_size=_env_int("LIVE_WHISPER_BEAM_SIZE", 1),
@@ -163,9 +167,22 @@ def _get_faster_whisper_model(model_name: str, device: str, compute_type: str) -
                 "faster-whisper is not installed. Install the open-source speech requirements to use TRANSCRIPTION_PROVIDER=local."
             ) from exc
 
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        try:
+            model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        except Exception as exc:
+            if device.strip().lower() != "cpu" and _is_cuda_runtime_error(exc):
+                raise TranscriptionError(
+                    "CUDA runtime libraries are missing for faster-whisper. Install CUDA/cuBLAS/cuDNN or set "
+                    "FASTER_WHISPER_DEVICE=cpu. Live captions can use CPU with LIVE_WHISPER_DEVICE=cpu."
+                ) from exc
+            raise
         _WHISPER_MODEL_CACHE[cache_key] = model
         return model
+
+
+def _is_cuda_runtime_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(marker in message for marker in ("cublas", "cudnn", "cuda", "cublas64_12.dll"))
 
 
 def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
