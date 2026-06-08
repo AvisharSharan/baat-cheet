@@ -97,6 +97,16 @@
                   <svg class="select-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
               </div>
+              <div class="field-group realtime-setting">
+                <label class="toggle-row" for="liveCaptionsToggle">
+                  <span class="toggle-copy">
+                    <span class="toggle-title">Live captions</span>
+                    <span class="toggle-sub">Sarvam streaming</span>
+                  </span>
+                  <input id="liveCaptionsToggle" type="checkbox" checked />
+                  <span class="toggle-switch" aria-hidden="true"></span>
+                </label>
+              </div>
               <div class="field-group recorded-setting" hidden>
                 <label class="field-label" for="recordedFile">Audio or video file</label>
                 <input id="recordedFile" type="file" accept="audio/*,video/*,.webm,.m4a,.mp3,.mp4,.wav,.ogg,.mov,.mkv" />
@@ -158,7 +168,7 @@
                 <div class="panel-dot" id="transcriptDot"></div>
                 <div>
                   <h2>Transcript</h2>
-                  <p class="panel-sub">Live captions during recording, final transcript after upload</p>
+                  <p class="panel-sub" id="transcriptSub">Live captions during recording, final transcript after upload</p>
                 </div>
               </div>
               <div class="panel-actions">

@@ -15,6 +15,7 @@ const liveSampleRate = 16000;
 
 const workflowMode = document.querySelector("#workflowMode");
 const captureMode = document.querySelector("#captureMode");
+const liveCaptionsToggle = document.querySelector("#liveCaptionsToggle");
 const realtimeSettings = document.querySelectorAll(".realtime-setting");
 const recordedSettings = document.querySelectorAll(".recorded-setting");
 const recordedFile = document.querySelector("#recordedFile");
@@ -38,11 +39,13 @@ const playbackSection = document.querySelector("#playbackSection");
 const recordingPlayback = document.querySelector("#recordingPlayback");
 const downloadRecordingLink = document.querySelector("#downloadRecordingLink");
 const workflowHint = document.querySelector("#workflowHint");
+const transcriptSub = document.querySelector("#transcriptSub");
 const themeToggle = document.querySelector("#themeToggle");
 const themeToggleText = document.querySelector("#themeToggleText");
 
 workflowMode.addEventListener("change", updateWorkflowMode);
 recordedFile.addEventListener("change", updateWorkflowMode);
+liveCaptionsToggle.addEventListener("change", updateLiveCaptionPreference);
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
 uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
@@ -50,6 +53,7 @@ momBtn.addEventListener("click", generateMom);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 themeToggle.addEventListener("click", toggleTheme);
 syncThemeToggle();
+syncLiveCaptionPreference();
 updateWorkflowMode();
 
 async function startRecording() {
@@ -67,11 +71,14 @@ async function startRecording() {
       renderRecordingPlayback();
       uploadRecording();
     };
-    await startLiveTranscription(stream);
+    if (liveCaptionsToggle.checked) {
+      await startLiveTranscription(stream);
+    }
     recorder.start();
-    setStatus("Recording");
+    setStatus(liveCaptionsToggle.checked ? "Recording" : "Recording - captions off");
     workflowMode.disabled = true;
     captureMode.disabled = true;
+    liveCaptionsToggle.disabled = true;
     speakerCount.disabled = true;
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -262,7 +269,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   if (!options.cleanupOverlay) destroyCleanupGlow();
   if (!transcript.length) {
     transcriptEl.className = "transcript transcript-empty";
-    transcriptEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>Start recording to see live captions, then stop to finalize with Sarvam diarization.</span></div>';
+    transcriptEl.innerHTML = `<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M10 16 Q13 11 16 16 Q19 21 22 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
     speakerEditor.innerHTML = "";
     rememberVoices.checked = false;
     rememberVoices.disabled = true;
@@ -399,19 +406,29 @@ function updateWorkflowMode() {
   uploadRecordedBtn.hidden = !recorded;
   workflowMode.disabled = Boolean(recording);
   captureMode.disabled = recorded || Boolean(recording);
+  liveCaptionsToggle.disabled = recorded || Boolean(recording);
   speakerCount.disabled = Boolean(recording);
   startBtn.disabled = recorded || Boolean(recording);
   uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
   recordedFile.disabled = false;
-  workflowHint.textContent = recorded
-    ? "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching."
-    : "Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.";
+  if (recorded) {
+    workflowHint.textContent = "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching.";
+    transcriptSub.textContent = "Final transcript after upload";
+  } else if (liveCaptionsToggle.checked) {
+    workflowHint.textContent = "Live captions stream during recording. Final audio is uploaded for Sarvam diarization after stop.";
+    transcriptSub.textContent = "Live captions during recording, final transcript after upload";
+  } else {
+    workflowHint.textContent = "Live captions are off. Final audio is still uploaded for Sarvam diarization after stop.";
+    transcriptSub.textContent = "Live captions off, final transcript after upload";
+  }
+  refreshEmptyTranscriptMessage();
 }
 
 function setUploadBusy(busy) {
   const recorded = workflowMode.value === "recorded";
   workflowMode.disabled = busy || (recorder && recorder.state === "recording");
   captureMode.disabled = busy || recorded;
+  liveCaptionsToggle.disabled = busy || recorded;
   speakerCount.disabled = busy;
   startBtn.disabled = busy || recorded;
   uploadRecordedBtn.disabled = busy || !recorded || !recordedFile.files.length;
@@ -573,4 +590,29 @@ function syncThemeToggle() {
   themeToggle.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
   themeToggle.title = light ? "Switch to dark theme" : "Switch to light theme";
   themeToggleText.textContent = light ? "Dark" : "Light";
+}
+
+function updateLiveCaptionPreference() {
+  localStorage.setItem("momLiveCaptions", liveCaptionsToggle.checked ? "on" : "off");
+  if (!liveCaptionsToggle.checked) liveTranscript = [];
+  updateWorkflowMode();
+}
+
+function syncLiveCaptionPreference() {
+  liveCaptionsToggle.checked = localStorage.getItem("momLiveCaptions") !== "off";
+}
+
+function emptyTranscriptMessage() {
+  if (workflowMode.value === "recorded") {
+    return "Upload a recording to create a Sarvam diarized transcript.";
+  }
+  return liveCaptionsToggle.checked
+    ? "Start recording to see live captions, then stop to finalize with Sarvam diarization."
+    : "Start recording without live captions, then stop to create the Sarvam diarized transcript.";
+}
+
+function refreshEmptyTranscriptMessage() {
+  if (!transcriptEl.classList.contains("transcript-empty")) return;
+  const emptyMessage = transcriptEl.querySelector(".empty-state span");
+  if (emptyMessage) emptyMessage.textContent = emptyTranscriptMessage();
 }
