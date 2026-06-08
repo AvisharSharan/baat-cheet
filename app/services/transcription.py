@@ -68,21 +68,18 @@ class FasterWhisperPyannoteTranscriptionClient:
         return _assign_speakers_to_segments(segments, diarization)
 
     def _transcribe_with_faster_whisper(self, audio_path: str) -> List[Dict[str, Any]]:
-        try:
-            model = _get_faster_whisper_model(
-                self.whisper_model,
-                self.whisper_device,
-                self.whisper_compute_type,
-            )
-        except TranscriptionError:
-            if self.whisper_device.strip().lower() == "cpu" or not _env_bool("FASTER_WHISPER_CPU_FALLBACK", True):
-                raise
-            model = _get_faster_whisper_model(self.whisper_model, "cpu", "int8")
-        segments, _ = model.transcribe(
+        transcribe_options = {
+            "beam_size": _env_int("FASTER_WHISPER_BEAM_SIZE", 1),
+            "vad_filter": _env_bool("FASTER_WHISPER_VAD_FILTER", True),
+            "word_timestamps": _env_bool("FASTER_WHISPER_WORD_TIMESTAMPS", False),
+        }
+        segments = _transcribe_with_device_fallback(
             audio_path,
-            beam_size=_env_int("FASTER_WHISPER_BEAM_SIZE", 1),
-            vad_filter=_env_bool("FASTER_WHISPER_VAD_FILTER", True),
-            word_timestamps=_env_bool("FASTER_WHISPER_WORD_TIMESTAMPS", False),
+            self.whisper_model,
+            self.whisper_device,
+            self.whisper_compute_type,
+            transcribe_options,
+            allow_cpu_fallback=_env_bool("FASTER_WHISPER_CPU_FALLBACK", True),
         )
         records = [
             {
@@ -135,17 +132,17 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
     model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
-    try:
-        model = _get_faster_whisper_model(model_name, device, compute_type)
-    except TranscriptionError:
-        if device.strip().lower() == "cpu":
-            raise
-        model = _get_faster_whisper_model(model_name, "cpu", "int8")
-    segments, _ = model.transcribe(
+    segments = _transcribe_with_device_fallback(
         audio_path,
-        beam_size=_env_int("LIVE_WHISPER_BEAM_SIZE", 1),
-        vad_filter=_env_bool("LIVE_WHISPER_VAD_FILTER", False),
-        condition_on_previous_text=False,
+        model_name,
+        device,
+        compute_type,
+        {
+            "beam_size": _env_int("LIVE_WHISPER_BEAM_SIZE", 1),
+            "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", False),
+            "condition_on_previous_text": False,
+        },
+        allow_cpu_fallback=True,
     )
     return [
         SpeakerTurn(
@@ -157,6 +154,27 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
         for segment in segments
         if getattr(segment, "text", "").strip()
     ]
+
+
+def _transcribe_with_device_fallback(
+    audio_path: str,
+    model_name: str,
+    device: str,
+    compute_type: str,
+    transcribe_options: Dict[str, Any],
+    *,
+    allow_cpu_fallback: bool,
+) -> List[Any]:
+    try:
+        model = _get_faster_whisper_model(model_name, device, compute_type)
+        segments, _ = model.transcribe(audio_path, **transcribe_options)
+        return list(segments)
+    except Exception as exc:
+        if device.strip().lower() == "cpu" or not allow_cpu_fallback or not _is_cuda_runtime_error(exc):
+            raise
+        model = _get_faster_whisper_model(model_name, "cpu", "int8")
+        segments, _ = model.transcribe(audio_path, **transcribe_options)
+        return list(segments)
 
 
 def _get_faster_whisper_model(model_name: str, device: str, compute_type: str) -> Any:
