@@ -357,7 +357,7 @@ body[data-recording-state="recording"] #transcriptDot {
   pointer-events: none;
 }
 
-select, input[type="number"], input[type="file"] {
+select, input[type="number"], input[type="file"], input[type="text"] {
   width: 100%;
   height: 38px;
   border: 1px solid var(--border-2);
@@ -373,7 +373,7 @@ select, input[type="number"], input[type="file"] {
   transition: border-color 0.15s;
 }
 
-input[type="number"] { padding: 0 12px; }
+input[type="number"], input[type="text"] { padding: 0 12px; }
 
 input[type="file"] {
   padding: 8px 10px;
@@ -582,6 +582,32 @@ select option { background: var(--bg-3); }
   pointer-events: none;
 }
 
+.tab-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tab-button {
+  height: 36px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tab-button:hover,
+.tab-button.active {
+  border-color: var(--gold);
+  background: var(--gold-dim);
+  color: var(--gold-2);
+}
+
 /* ─── PLAYBACK ───────────────────────────────────────────────── */
 .playbackSection[hidden] { display: none; }
 
@@ -602,10 +628,19 @@ select option { background: var(--bg-3); }
 
 /* ─── CONTENT AREA ───────────────────────────────────────────── */
 .content-area {
+  min-width: 0;
+}
+
+.meeting-view {
   display: grid;
   grid-template-columns: minmax(0,1fr) minmax(0,1fr);
   gap: 16px;
   min-width: 0;
+}
+
+.meeting-view[hidden],
+.history-view[hidden] {
+  display: none;
 }
 
 /* ─── PANELS ─────────────────────────────────────────────────── */
@@ -648,6 +683,7 @@ select option { background: var(--bg-3); }
 }
 
 .panel-dot-amber { background: var(--gold); opacity: 0.5; }
+.panel-dot-history { background: var(--green); opacity: 0.65; }
 
 .panel-sub {
   margin-top: 2px;
@@ -914,6 +950,99 @@ html[data-theme="light"] .cleanup-text {
   text-align: center;
 }
 
+/* History */
+.panel-history {
+  height: calc(100vh - 200px);
+}
+
+.history-list {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-4) transparent;
+}
+
+.history-item {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text);
+  text-align: left;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.history-item + .history-item {
+  margin-top: 10px;
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: var(--gold);
+  background: var(--bg-4);
+}
+
+.history-item:hover {
+  transform: translateY(-1px);
+}
+
+.history-item-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.history-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.history-meta {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.history-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.history-badges span {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.history-speakers {
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 /* ─── MINUTES GENERATING OVERLAY ────────────────────────────── */
 .panel-minutes {
   position: relative;
@@ -1102,7 +1231,8 @@ html[data-theme="light"] .metric-card {
 
 html[data-theme="light"] select,
 html[data-theme="light"] input[type="number"],
-html[data-theme="light"] input[type="file"] {
+html[data-theme="light"] input[type="file"],
+html[data-theme="light"] input[type="text"] {
   background: var(--bg-2);
 }
 
@@ -1154,7 +1284,7 @@ html[data-theme="light"] .cleanup-overlay {
 
 /* ─── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .content-area { grid-template-columns: 1fr; }
+  .meeting-view { grid-template-columns: 1fr; }
   .panel {
     height: 68vh;
     min-height: 460px;

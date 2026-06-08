@@ -42,6 +42,13 @@ const workflowHint = document.querySelector("#workflowHint");
 const transcriptSub = document.querySelector("#transcriptSub");
 const themeToggle = document.querySelector("#themeToggle");
 const themeToggleText = document.querySelector("#themeToggleText");
+const meetingName = document.querySelector("#meetingName");
+const newMeetingBtn = document.querySelector("#newMeetingBtn");
+const historyTabBtn = document.querySelector("#historyTabBtn");
+const refreshHistoryBtn = document.querySelector("#refreshHistoryBtn");
+const meetingView = document.querySelector("#meetingView");
+const historyView = document.querySelector("#historyView");
+const historyList = document.querySelector("#historyList");
 
 workflowMode.addEventListener("change", updateWorkflowMode);
 recordedFile.addEventListener("change", updateWorkflowMode);
@@ -52,9 +59,14 @@ uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
 momBtn.addEventListener("click", generateMom);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 themeToggle.addEventListener("click", toggleTheme);
+newMeetingBtn.addEventListener("click", startNewMeeting);
+historyTabBtn.addEventListener("click", showHistory);
+refreshHistoryBtn.addEventListener("click", loadHistory);
 syncThemeToggle();
 syncLiveCaptionPreference();
 updateWorkflowMode();
+meetingName.value = defaultMeetingName();
+loadHistory();
 
 async function startRecording() {
   try {
@@ -194,6 +206,9 @@ async function uploadMeetingFile(file, filename) {
   if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
+  if (meetingName.value.trim()) {
+    form.append("meeting_name", meetingName.value.trim());
+  }
 
   setStatus("Uploading recording");
   setUploadBusy(true);
@@ -206,7 +221,10 @@ async function uploadMeetingFile(file, filename) {
 
   const data = await response.json();
   meetingId = data.id;
+  meetingName.value = data.name || meetingName.value;
   setStatus("Transcribing with Sarvam");
+  showMeeting();
+  loadHistory();
   pollStatus();
   pollTimer = window.setInterval(pollStatus, 2500);
 }
@@ -219,10 +237,13 @@ async function pollStatus() {
   if (["transcribed", "ready", "failed"].includes(data.status) && pollTimer) {
     window.clearInterval(pollTimer);
     pollTimer = null;
+    loadHistory();
   }
 }
 
 function renderState(data) {
+  if (data.id) meetingId = data.id;
+  if (data.name) meetingName.value = data.name;
   setStatus(statusLabel(data));
   const finalTranscript = data.transcript || [];
   const keepLiveTranscript = data.status === "transcribing" && finalTranscript.length === 0 && liveTranscript.length > 0;
@@ -254,6 +275,81 @@ function renderState(data) {
     setMomGenerating(false);
   }
   updateControls(data, finalTranscript);
+}
+
+async function loadHistory() {
+  try {
+    const response = await fetch("/api/meetings");
+    if (!response.ok) throw new Error("Could not load meeting history");
+    renderHistory(await response.json());
+  } catch (error) {
+    historyList.innerHTML = `<div class="empty-state"><strong>History unavailable</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
+function renderHistory(meetings) {
+  if (!meetings.length) {
+    historyList.innerHTML = `<div class="empty-state"><div class="empty-icon"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="1.5" opacity="0.45"/><path d="M16 9v8l5 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><strong>No meeting history yet</strong><span>Create or upload a meeting to see its name, time, speakers, labels, transcript, and minutes here.</span></div>`;
+    return;
+  }
+
+  historyList.innerHTML = meetings
+    .map((meeting) => {
+      const speakers = meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet";
+      const active = meeting.id === meetingId ? " active" : "";
+      return `<button class="history-item${active}" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
+        <div class="history-item-main">
+          <span class="history-name">${escapeHtml(meeting.name)}</span>
+          <span class="history-meta">${escapeHtml(formatDateTime(meeting.created_at))}</span>
+        </div>
+        <div class="history-badges">
+          <span>${escapeHtml(statusLabel(meeting))}</span>
+          <span>${meeting.transcript_turns} turns</span>
+          <span>${meeting.word_count} words</span>
+          ${meeting.mom_available ? "<span>Minutes</span>" : ""}
+        </div>
+        <div class="history-speakers">${escapeHtml(speakers)}</div>
+      </button>`;
+    })
+    .join("");
+
+  historyList.querySelectorAll(".history-item").forEach((item) => {
+    item.addEventListener("click", () => openHistoryMeeting(item.dataset.meetingId));
+  });
+}
+
+async function openHistoryMeeting(id) {
+  if (!id) return;
+  const response = await fetch(`/api/meetings/${id}/status`);
+  if (!response.ok) {
+    setStatus("Meeting not found");
+    return;
+  }
+  renderState(await response.json());
+  showMeeting();
+  loadHistory();
+}
+
+function startNewMeeting() {
+  resetSessionOutput();
+  meetingName.value = defaultMeetingName();
+  showMeeting();
+  setStatus("Ready");
+}
+
+function showHistory() {
+  historyView.hidden = false;
+  meetingView.hidden = true;
+  historyTabBtn.classList.add("active");
+  newMeetingBtn.classList.remove("active");
+  loadHistory();
+}
+
+function showMeeting() {
+  meetingView.hidden = false;
+  historyView.hidden = true;
+  newMeetingBtn.classList.add("active");
+  historyTabBtn.classList.remove("active");
 }
 
 function updateControls(data, finalTranscript) {
@@ -562,6 +658,22 @@ function getRecorderOptions() {
 
 function recordingFilename(mimeType) {
   return mimeType.includes("mp4") ? "meeting-recording.mp4" : "meeting-recording.webm";
+}
+
+function defaultMeetingName() {
+  const now = new Date();
+  return `Meeting ${now.toLocaleDateString([], { month: "short", day: "numeric" })} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "Time unavailable";
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function escapeHtml(value) {

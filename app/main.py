@@ -4,6 +4,7 @@ import asyncio
 import logging
 import shutil
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .models import MeetingCreateResponse, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
+from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
 from .services.live_transcription import SarvamLiveTranscriptionClient, live_event_to_turn
 from .services.mom import MomGenerationClient
@@ -44,6 +45,7 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     num_speakers: int | None = Form(default=None),
+    meeting_name: str | None = Form(default=None),
 ) -> MeetingCreateResponse:
     if num_speakers is not None and not 1 <= num_speakers <= 10:
         raise HTTPException(status_code=422, detail="num_speakers must be between 1 and 10.")
@@ -57,13 +59,14 @@ async def upload_audio(
 
     meeting = MeetingState(
         id=meeting_id,
+        name=_meeting_name(meeting_name, meeting_id),
         status=MeetingStatus.UPLOADED,
         audio_path=str(audio_path),
         num_speakers=num_speakers,
     )
     store.add(meeting)
     background_tasks.add_task(transcribe_meeting, meeting_id)
-    return MeetingCreateResponse(id=meeting.id, status=meeting.status)
+    return MeetingCreateResponse(id=meeting.id, name=meeting.name, status=meeting.status)
 
 
 @app.websocket("/api/live/transcribe")
@@ -72,7 +75,9 @@ async def live_transcribe(websocket: WebSocket) -> None:
     meeting_id = uuid4().hex
     meeting = MeetingState(
         id=meeting_id,
+        name=f"Live meeting {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         status=MeetingStatus.TRANSCRIBING,
+        visible_in_history=False,
         speaker_names={"Live": "Live"},
     )
     store.add(meeting)
@@ -117,6 +122,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
                 await audio_queue.put(None)
                 meeting = store.get(meeting_id)
                 meeting.status = MeetingStatus.TRANSCRIBED
+                meeting.completed_at = datetime.now(timezone.utc)
                 store.update(meeting)
                 await websocket.send_json({"type": "state", "meeting": MeetingStatusResponse.from_state(meeting).model_dump(mode="json")})
                 break
@@ -135,6 +141,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
     except Exception as exc:
         meeting = store.get(meeting_id)
         meeting.status = MeetingStatus.FAILED
+        meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = str(exc)
         store.update(meeting)
         try:
@@ -149,6 +156,11 @@ async def live_transcribe(websocket: WebSocket) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+@app.get("/api/meetings", response_model=list[MeetingHistoryItem])
+async def list_meetings() -> list[MeetingHistoryItem]:
+    return [MeetingHistoryItem.from_state(meeting) for meeting in store.list()]
 
 
 @app.get("/api/meetings/{meeting_id}/status", response_model=MeetingStatusResponse)
@@ -189,9 +201,11 @@ async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
     try:
         meeting.mom_markdown = await MomGenerationClient().generate(meeting.transcript, meeting.speaker_names)
         meeting.status = MeetingStatus.READY
+        meeting.completed_at = meeting.completed_at or datetime.now(timezone.utc)
         meeting.error = None
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
+        meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = str(exc)
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
@@ -259,9 +273,11 @@ async def transcribe_meeting(meeting_id: str) -> None:
             meeting.voiceprint_status = "failed"
             meeting.voiceprint_error = "Voiceprinting failed. Check the server log for details."
         meeting.status = MeetingStatus.TRANSCRIBED
+        meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = None
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
+        meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = str(exc)
     finally:
         delete_temp_file(meeting.audio_path)
@@ -275,3 +291,10 @@ def _get_meeting(meeting_id: str) -> MeetingState:
         return store.get(meeting_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Meeting not found.") from exc
+
+
+def _meeting_name(raw_name: str | None, meeting_id: str) -> str:
+    name = (raw_name or "").strip()
+    if name:
+        return name[:120]
+    return f"Meeting {datetime.now().strftime('%Y-%m-%d %H:%M')} ({meeting_id[:6]})"

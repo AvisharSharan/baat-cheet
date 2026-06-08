@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Dict
+from typing import Dict, List
 
 from .models import MeetingState
 
@@ -33,7 +34,17 @@ class MeetingStore:
         with self._lock:
             if meeting.id not in self._meetings:
                 raise KeyError(meeting.id)
+            meeting.updated_at = datetime.now(timezone.utc)
             self._meetings[meeting.id] = meeting.model_copy(deep=True)
+
+    def list(self) -> List[MeetingState]:
+        with self._lock:
+            meetings = [
+                meeting.model_copy(deep=True)
+                for meeting in self._meetings.values()
+                if meeting.visible_in_history
+            ]
+        return sorted(meetings, key=lambda meeting: meeting.updated_at, reverse=True)
 
 
 def delete_temp_file(path: str | None) -> None:

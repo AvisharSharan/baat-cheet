@@ -75,6 +75,20 @@
           </div>
 
           <div class="sidebar-block">
+            <p class="block-label">Meeting</p>
+            <div class="field-stack">
+              <div class="field-group">
+                <label class="field-label" for="meetingName">Meeting name</label>
+                <input id="meetingName" type="text" maxlength="120" placeholder="Weekly sync" />
+              </div>
+              <div class="tab-buttons" role="tablist" aria-label="Meeting views">
+                <button id="newMeetingBtn" class="tab-button active" type="button">New Meeting</button>
+                <button id="historyTabBtn" class="tab-button" type="button">History</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sidebar-block">
             <p class="block-label">Capture Settings</p>
             <div class="field-stack">
               <div class="field-group">
@@ -162,6 +176,7 @@
 
         <section class="content-area">
 
+          <div id="meetingView" class="meeting-view">
           <div class="panel panel-transcript">
             <div class="panel-head">
               <div class="panel-title-group">
@@ -206,6 +221,34 @@
               <div class="export-links" id="exportLinks"></div>
             </div>
             <pre id="momOutput" class="mom mom-empty">Transcribe the meeting, then click Draft Minutes to generate.</pre>
+          </div>
+          </div>
+
+          <div id="historyView" class="history-view" hidden>
+            <div class="panel panel-history">
+              <div class="panel-head">
+                <div class="panel-title-group">
+                  <div class="panel-dot panel-dot-history"></div>
+                  <div>
+                    <h2>Meeting History</h2>
+                    <p class="panel-sub">Completed and in-progress meetings for this server session</p>
+                  </div>
+                </div>
+                <button id="refreshHistoryBtn" class="btn btn-ghost btn-sm" type="button">Refresh</button>
+              </div>
+              <div id="historyList" class="history-list">
+                <div class="empty-state">
+                  <div class="empty-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                      <circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="1.5" opacity="0.45"/>
+                      <path d="M16 9v8l5 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                  <strong>No meeting history yet</strong>
+                  <span>Create or upload a meeting to see its name, time, speakers, labels, transcript, and minutes here.</span>
+                </div>
+              </div>
+            </div>
           </div>
 
         </section>
