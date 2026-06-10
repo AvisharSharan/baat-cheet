@@ -32,6 +32,7 @@ class MeetingState(BaseModel):
     completed_at: Optional[datetime] = None
     audio_path: Optional[str] = None
     num_speakers: Optional[int] = None
+    speaker_labels_enabled: bool = True
     error: Optional[str] = None
     visible_in_history: bool = True
     transcript: List[SpeakerTurn] = Field(default_factory=list)
@@ -64,13 +65,16 @@ class MeetingHistoryItem(BaseModel):
     transcript_turns: int = 0
     word_count: int = 0
     mom_available: bool = False
+    speaker_labels_enabled: bool = True
 
     @classmethod
     def from_state(cls, state: "MeetingState") -> "MeetingHistoryItem":
-        labels = {
-            state.speaker_names.get(turn.speaker, turn.speaker)
-            for turn in state.transcript
-        }
+        labels = set()
+        if state.speaker_labels_enabled:
+            labels = {
+                state.speaker_names.get(turn.speaker, turn.speaker)
+                for turn in state.transcript
+            }
         return cls(
             id=state.id,
             name=state.name,
@@ -82,6 +86,7 @@ class MeetingHistoryItem(BaseModel):
             transcript_turns=len(state.transcript),
             word_count=sum(len(turn.text.split()) for turn in state.transcript),
             mom_available=bool(state.mom_markdown),
+            speaker_labels_enabled=state.speaker_labels_enabled,
         )
 
 
@@ -95,6 +100,7 @@ class MeetingStatusResponse(BaseModel):
     error: Optional[str] = None
     transcript: List[SpeakerTurn] = Field(default_factory=list)
     speaker_names: Dict[str, str] = Field(default_factory=dict)
+    speaker_labels_enabled: bool = True
     voiceprints_ready: bool = False
     voiceprint_status: str = "pending"
     voiceprint_error: Optional[str] = None
@@ -116,6 +122,7 @@ class MeetingStatusResponse(BaseModel):
             error=state.error,
             transcript=state.transcript,
             speaker_names=state.speaker_names,
+            speaker_labels_enabled=state.speaker_labels_enabled,
             voiceprints_ready=bool(state.speaker_embeddings),
             voiceprint_status=state.voiceprint_status,
             voiceprint_error=state.voiceprint_error,

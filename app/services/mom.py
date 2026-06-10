@@ -32,8 +32,14 @@ class MomGenerationClient:
         if self.provider in {"huggingface", "openai-compatible"} and not self.api_key:
             raise MomGenerationError("MOM_API_KEY or HF_TOKEN is not configured.")
 
-    async def generate(self, transcript: List[SpeakerTurn], speaker_names: Dict[str, str]) -> str:
-        prompt = build_mom_prompt(transcript, speaker_names)
+    async def generate(
+        self,
+        transcript: List[SpeakerTurn],
+        speaker_names: Dict[str, str],
+        *,
+        speaker_labels_enabled: bool = True,
+    ) -> str:
+        prompt = build_mom_prompt(transcript, speaker_names, speaker_labels_enabled=speaker_labels_enabled)
         response = await self._post_chat(prompt)
         if response.status_code >= 400:
             detail = _response_error_detail(response)
@@ -118,13 +124,75 @@ Style constraints — never violate these:
 """
 
 
-def build_mom_prompt(transcript: List[SpeakerTurn], speaker_names: Dict[str, str]) -> str:
+def build_mom_prompt(
+    transcript: List[SpeakerTurn],
+    speaker_names: Dict[str, str],
+    *,
+    speaker_labels_enabled: bool = True,
+) -> str:
     lines = []
     for turn in sorted(transcript, key=lambda item: (item.start_ms is None, item.start_ms if item.start_ms is not None else 0)):
-        speaker = speaker_names.get(turn.speaker, turn.speaker)
-        lines.append(f"{speaker}: {turn.text}")
+        if speaker_labels_enabled:
+            speaker = speaker_names.get(turn.speaker, turn.speaker)
+            lines.append(f"{speaker}: {turn.text}")
+        else:
+            lines.append(turn.text)
 
     transcript_text = "\n".join(lines)
+    transcript_context = (
+        "The transcript below has already been sorted chronologically and speaker labels have been "
+        "resolved to full names. Diarization may contain short overlapping fragments or incomplete "
+        "sentences - treat these as part of the surrounding context, not as separate statements."
+        if speaker_labels_enabled
+        else
+        "The transcript below has already been sorted chronologically. Speaker labels were intentionally "
+        "disabled for this meeting, so do not infer attendees, speakers, owners, or facilitators from voice turns."
+    )
+    return f"""\
+{transcript_context}
+
+Generate a Minutes of Meeting document using exactly the Markdown structure below.
+Emit every heading even if a section has no content; in that case write a single
+bullet "- Not stated" under it.
+
+---
+
+# Minutes of Meeting
+
+## Meeting Details
+- Date: <date or "Not stated">
+- Time: <time or "Not stated">
+- Facilitator: <name or "Not stated">
+- Attendees: <comma-separated list of every speaker name that appears in the transcript, or "Not stated" when speaker labels are disabled>
+
+## Objective
+<One sentence stating the meeting's stated purpose. If no purpose was stated, write "Not stated.">
+
+## Key Discussion Points
+<Bullet list of topics discussed. One sentence per bullet. Chronological order.>
+
+## Decisions
+<Numbered list. Each item is one explicit, unambiguous decision reached during the meeting. Only include decisions - not proposals, suggestions, or open topics.>
+
+## Action Items
+| # | Action | Owner | Due Date | Notes |
+|---|--------|-------|----------|-------|
+<One row per action item. Owner and Due Date are "Not stated" if not explicit. Notes column captures source context in 10 words or fewer.>
+
+## Risks and Blockers
+<Bullet list of concerns, blockers, or risks explicitly flagged by speakers.>
+
+## Open Questions
+<Bullet list of questions that were raised but not resolved in the meeting.>
+
+## Next Meeting
+<Date, time, and agenda topics if stated. Otherwise a single bullet "- Not stated".>
+
+---
+
+Transcript:
+{transcript_text}
+"""
     return f"""\
 The transcript below has already been sorted chronologically and speaker labels have been \
 resolved to full names. Diarization may contain short overlapping fragments or incomplete \

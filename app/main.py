@@ -116,6 +116,7 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     num_speakers: int | None = Form(default=None),
+    speaker_labels_enabled: bool = Form(default=True),
     meeting_name: str | None = Form(default=None),
     _: CurrentUser = Depends(current_user),
 ) -> MeetingCreateResponse:
@@ -135,6 +136,7 @@ async def upload_audio(
         status=MeetingStatus.UPLOADED,
         audio_path=str(audio_path),
         num_speakers=num_speakers,
+        speaker_labels_enabled=speaker_labels_enabled,
     )
     store.add(meeting)
     background_tasks.add_task(transcribe_meeting, meeting_id)
@@ -196,7 +198,11 @@ async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) 
     meeting.status = MeetingStatus.GENERATING
     store.update(meeting)
     try:
-        meeting.mom_markdown = await MomGenerationClient().generate(meeting.transcript, meeting.speaker_names)
+        meeting.mom_markdown = await MomGenerationClient().generate(
+            meeting.transcript,
+            meeting.speaker_names,
+            speaker_labels_enabled=meeting.speaker_labels_enabled,
+        )
         meeting.status = MeetingStatus.READY
         meeting.completed_at = meeting.completed_at or datetime.now(timezone.utc)
         meeting.error = None
@@ -250,13 +256,21 @@ async def transcribe_meeting(meeting_id: str) -> None:
         meeting.transcript = await create_transcription_client().transcribe(
             meeting.audio_path or "",
             num_speakers=meeting.num_speakers,
+            speaker_labels_enabled=meeting.speaker_labels_enabled,
         )
         speakers = sorted({turn.speaker for turn in meeting.transcript})
-        meeting.speaker_names = {speaker: speaker for speaker in speakers}
+        meeting.speaker_names = {speaker: speaker for speaker in speakers if speaker} if meeting.speaker_labels_enabled else {}
         meeting.status = MeetingStatus.TRANSCRIBED
         meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = None
         store.update(meeting)
+
+        if not meeting.speaker_labels_enabled:
+            meeting.speaker_embeddings = {}
+            meeting.voiceprint_status = "disabled"
+            meeting.voiceprint_error = "Speaker labels are disabled for this meeting."
+            store.update(meeting)
+            return
 
         meeting.speaker_embeddings = {}
         meeting.voiceprint_status = "processing"

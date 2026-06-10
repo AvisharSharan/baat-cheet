@@ -21,6 +21,7 @@ const workflowMode       = document.querySelector("#workflowMode");
 const modeBtns           = document.querySelectorAll(".mode-btn");
 const captureMode        = document.querySelector("#captureMode");
 const liveCaptionsToggle = document.querySelector("#liveCaptionsToggle");
+const speakerLabelsToggle = document.querySelector("#speakerLabelsToggle");
 const realtimeOnly       = document.querySelector(".realtime-only");
 const recordedOnly       = document.querySelector(".recorded-only");
 const recordedSettings   = document.querySelectorAll(".recorded-setting");
@@ -75,6 +76,7 @@ const logoutBtn          = document.querySelector("#logoutBtn");
 modeBtns.forEach(btn => btn.addEventListener("click", () => setWorkflowMode(btn.dataset.mode)));
 recordedFile.addEventListener("change", onFileChange);
 liveCaptionsToggle.addEventListener("change", updateLiveCaptionPreference);
+speakerLabelsToggle.addEventListener("change", updateSpeakerLabelPreference);
 startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
 uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
@@ -232,7 +234,8 @@ function setRecordingState(active) {
   workflowMode.disabled = active;
   captureMode.disabled = active;
   liveCaptionsToggle.disabled = active;
-  speakerCount.disabled = active;
+  speakerLabelsToggle.disabled = active;
+  speakerCount.disabled = active || !speakerLabelsToggle.checked;
   startBtn.disabled = active;
   stopBtn.disabled = !active;
   momBtn.disabled = true;
@@ -340,9 +343,10 @@ async function uploadMeetingFile(file, filename) {
   const form = new FormData();
   form.append("audio", file, filename);
   const expectedSpeakers = Number(speakerCount.value);
-  if (Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
+  if (speakerLabelsToggle.checked && Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
+  form.append("speaker_labels_enabled", speakerLabelsToggle.checked ? "true" : "false");
   if (meetingName.value.trim()) form.append("meeting_name", meetingName.value.trim());
 
   setStatus("Uploading recording…");
@@ -378,6 +382,8 @@ function renderState(data) {
   if (data.name) meetingName.value = data.name;
   setStatus(statusLabel(data));
   const finalTranscript = data.transcript || [];
+  const speakerLabelsEnabled = data.speaker_labels_enabled !== false;
+  speakerLabelsToggle.checked = speakerLabelsEnabled;
   const isTranscribing = data.status === "uploaded" || data.status === "transcribing";
   const transcriptForDisplay = finalTranscript.length ? finalTranscript : (isTranscribing ? liveTranscript : []);
   if (finalTranscript.length > 0) liveTranscript = [];
@@ -386,7 +392,8 @@ function renderState(data) {
     finalTranscript.length ? (data.speaker_names || {}) : { Live: "Live" },
     {
       processing: isTranscribing,
-      skipSpeakerEditor: !finalTranscript.length && transcriptForDisplay.length > 0,
+      skipSpeakerEditor: !speakerLabelsEnabled || (!finalTranscript.length && transcriptForDisplay.length > 0),
+      noSpeakerLabels: !speakerLabelsEnabled && finalTranscript.length > 0,
     },
   );
   if (data.mom_markdown) {
@@ -423,7 +430,9 @@ function renderHistory(meetings) {
     return;
   }
   historyList.innerHTML = meetings.map((meeting) => {
-    const speakers = meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet";
+    const speakers = meeting.speaker_labels_enabled === false
+      ? "No speaker labels"
+      : (meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet");
     const active = meeting.id === meetingId ? " active" : "";
     return `<div class="history-item${active}" data-meeting-id="${escapeHtml(meeting.id)}">
       <button class="history-open" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
@@ -505,10 +514,11 @@ function showMeeting() {
 
 function updateControls(data, finalTranscript) {
   const busy = data.status === "transcribing" || data.status === "generating";
+  const speakerLabelsEnabled = data.speaker_labels_enabled !== false;
   setUploadBusy(busy);
   momBtn.disabled = !finalTranscript.length || data.status === "generating";
-  saveSpeakersBtn.disabled = !finalTranscript.length;
-  rememberVoices.disabled = !finalTranscript.length || !data.voiceprints_ready;
+  saveSpeakersBtn.disabled = !speakerLabelsEnabled || !finalTranscript.length;
+  rememberVoices.disabled = !speakerLabelsEnabled || !finalTranscript.length || !data.voiceprints_ready;
   rememberVoices.title = voiceprintHint(data);
 }
 
@@ -537,10 +547,10 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   }
 
   // Key changes only when new turns arrive or the last turn's text updates
-  const contentKey = `${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
+  const contentKey = `${options.noSpeakerLabels ? "plain" : "labels"}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
-  updateMetrics(transcript);
+  updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels });
 
   speakerEditor.innerHTML = options.skipSpeakerEditor ? "" : speakers.map((speaker) => {
     const value = speakerNames[speaker] || speaker;
@@ -550,7 +560,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   speakerFooter.hidden = options.skipSpeakerEditor || !speakers.length;
 
   if (transcriptBadge) {
-    transcriptBadge.textContent = options.processing ? "Finalizing" : `${transcript.length} turns`;
+    transcriptBadge.textContent = options.processing ? "Finalizing" : (options.noSpeakerLabels ? "Plain transcript" : `${transcript.length} turns`);
     transcriptBadge.hidden = false;
   }
 
@@ -558,17 +568,20 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   if (contentKey === _lastTranscriptKey) return;
   _lastTranscriptKey = contentKey;
 
-  transcriptEl.className = "transcript";
+  transcriptEl.className = options.noSpeakerLabels ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn) => {
+    if (options.noSpeakerLabels) {
+      return `<div class="turn"><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
+    }
     const label = speakerNames[turn.speaker] || turn.speaker;
     return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
   }).join("");
 }
 
-function updateMetrics(transcript) {
+function updateMetrics(transcript, options = {}) {
   const speakers = new Set(transcript.map((turn) => turn.speaker));
   const words = transcript.reduce((count, turn) => count + turn.text.trim().split(/\s+/).filter(Boolean).length, 0);
-  speakerMetric.textContent = speakers.size || "—";
+  speakerMetric.textContent = options.noSpeakerLabels ? "Off" : (speakers.size || "—");
   turnMetric.textContent = transcript.length || "—";
   wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : (words || "—");
 }
@@ -597,7 +610,7 @@ async function saveSpeakers() {
 
 async function generateMom() {
   if (!meetingId) return;
-  await saveSpeakers();
+  if (!speakerFooter.hidden) await saveSpeakers();
   setStatus("Drafting minutes…");
   momBtn.disabled = true;
   setMomGenerating(true);
@@ -675,6 +688,7 @@ function onFileChange() {
 function updateWorkflowUI() {
   const recorded = workflowMode.value === "recorded";
   const recording = recorder && recorder.state === "recording";
+  const speakerLabelsEnabled = speakerLabelsToggle.checked;
 
   realtimeOnly.hidden = recorded;
   recordedOnly.hidden = !recorded;
@@ -686,19 +700,26 @@ function updateWorkflowUI() {
   workflowMode.disabled = Boolean(recording);
   captureMode.disabled = recorded || Boolean(recording);
   liveCaptionsToggle.disabled = recorded || Boolean(recording);
-  speakerCount.disabled = Boolean(recording);
+  speakerLabelsToggle.disabled = Boolean(recording);
+  speakerCount.disabled = Boolean(recording) || !speakerLabelsEnabled;
   startBtn.disabled = recorded || Boolean(recording);
   uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
   recordedFile.disabled = false;
 
   if (recorded) {
-    workflowHint.textContent = "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching.";
+    workflowHint.textContent = speakerLabelsEnabled
+      ? "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching."
+      : "Upload a finished audio or video recording for one plain transcript without speaker labels.";
     if (transcriptSub) transcriptSub.textContent = "Final transcript after upload";
   } else if (liveCaptionsToggle.checked) {
-    workflowHint.textContent = "Local captions preview during recording. Final upload still runs full diarized transcription.";
+    workflowHint.textContent = speakerLabelsEnabled
+      ? "Local captions preview during recording. Final upload still runs full diarized transcription."
+      : "Local captions preview during recording. Final upload creates one plain transcript without speaker labels.";
     if (transcriptSub) transcriptSub.textContent = "Local captions during recording, final transcript after upload";
   } else {
-    workflowHint.textContent = "Record meeting audio, then finalize with local faster-whisper transcription and pyannote diarization.";
+    workflowHint.textContent = speakerLabelsEnabled
+      ? "Record meeting audio, then finalize with local faster-whisper transcription and pyannote diarization."
+      : "Record meeting audio, then finalize as one plain transcript without speaker labels.";
     if (transcriptSub) transcriptSub.textContent = "Final local transcript after upload";
   }
   refreshEmptyTranscriptMessage();
@@ -709,7 +730,8 @@ function setUploadBusy(busy) {
   workflowMode.disabled = busy || (recorder && recorder.state === "recording");
   captureMode.disabled = busy || recorded;
   liveCaptionsToggle.disabled = busy || recorded;
-  speakerCount.disabled = busy;
+  speakerLabelsToggle.disabled = busy;
+  speakerCount.disabled = busy || !speakerLabelsToggle.checked;
   startBtn.disabled = busy || recorded;
   uploadRecordedBtn.disabled = busy || !recorded || !recordedFile.files.length;
   recordedFile.disabled = busy;
@@ -864,11 +886,21 @@ function updateLiveCaptionPreference() {
   updateWorkflowUI();
 }
 
+function updateSpeakerLabelPreference() {
+  if (!speakerLabelsToggle.checked) speakerCount.value = "";
+  updateWorkflowUI();
+}
+
 function syncLiveCaptionPreference() {
   liveCaptionsToggle.checked = localStorage.getItem("momLiveCaptions") !== "off";
 }
 
 function emptyTranscriptMessage() {
+  if (!speakerLabelsToggle.checked) {
+    return workflowMode.value === "recorded"
+      ? "Upload a recording to create one plain transcript without speaker labels."
+      : "Start recording, then stop to create one plain transcript without speaker labels.";
+  }
   if (workflowMode.value === "recorded") return "Upload a recording to create a local diarized transcript.";
   return liveCaptionsToggle.checked
     ? "Start recording to see local caption previews, then stop for the final diarized transcript."

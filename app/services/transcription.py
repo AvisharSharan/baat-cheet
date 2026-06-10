@@ -20,7 +20,12 @@ class TranscriptionError(RuntimeError):
 
 
 class TranscriptionClient(Protocol):
-    async def transcribe(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
+    async def transcribe(
+        self,
+        audio_path: str,
+        num_speakers: int | None = None,
+        speaker_labels_enabled: bool = True,
+    ) -> List[SpeakerTurn]:
         ...
 
 
@@ -52,8 +57,17 @@ class FasterWhisperPyannoteTranscriptionClient:
         self.pyannote_model = pyannote_model or os.getenv("PYANNOTE_DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1")
         self.hf_token = hf_token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
 
-    async def transcribe(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
+    async def transcribe(
+        self,
+        audio_path: str,
+        num_speakers: int | None = None,
+        speaker_labels_enabled: bool = True,
+    ) -> List[SpeakerTurn]:
         whisper_task = asyncio.to_thread(self._transcribe_with_faster_whisper, audio_path)
+
+        if not speaker_labels_enabled:
+            segments = await whisper_task
+            return _segments_to_plain_transcript(segments)
 
         if num_speakers == 1 or os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() in {"none", "off", "0", "false"}:
             segments = await whisper_task
@@ -311,6 +325,22 @@ def _assign_speakers_to_segments(
     if not turns:
         raise TranscriptionError("No speaker transcript turns were produced from local transcription.")
     return _merge_adjacent_turns(turns)
+
+
+def _segments_to_plain_transcript(segments: List[Dict[str, Any]]) -> List[SpeakerTurn]:
+    text = " ".join(str(segment.get("text", "")).strip() for segment in segments).strip()
+    if not text:
+        raise TranscriptionError("No transcript text was produced from local transcription.")
+    starts = [_first_int(segment, ("start_ms", "start")) for segment in segments]
+    ends = [_first_int(segment, ("end_ms", "end")) for segment in segments]
+    return [
+        SpeakerTurn(
+            speaker="",
+            text=text,
+            start_ms=next((value for value in starts if value is not None), None),
+            end_ms=next((value for value in reversed(ends) if value is not None), None),
+        )
+    ]
 
 
 def _best_overlap_speaker(start_ms: int | None, end_ms: int | None, diarization: List[Dict[str, Any]]) -> str | None:
