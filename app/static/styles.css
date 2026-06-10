@@ -1592,8 +1592,10 @@ h2 {
    HISTORY
 ═══════════════════════════════════════════════ */
 .panel-history {
-  height: calc(100vh - 180px);
+  height: auto;
   min-height: 500px;
+  max-height: calc(100vh - 180px);
+  overflow: hidden;
 }
 
 .history-list {
@@ -1762,6 +1764,10 @@ h2 {
   .panel {
     height: 68vh;
     min-height: 460px;
+  }
+  .panel-history {
+    height: auto;
+    max-height: 80vh;
   }
 }
 
