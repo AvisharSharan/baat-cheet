@@ -214,11 +214,14 @@ async function startRecording() {
     chunks = [];
     recorder = new MediaRecorder(stream, getRecorderOptions());
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-      stopLiveTranscription();
-      stopActiveCapture();
-      renderRecordingPlayback();
-      uploadRecording();
+    recorder.onstop = async () => {
+      try {
+        await stopLiveTranscription({ waitForFinalChunk: true });
+      } finally {
+        stopActiveCapture();
+        renderRecordingPlayback();
+        uploadRecording();
+      }
     };
     if (liveCaptionsToggle.checked) await startLiveTranscription(stream);
     recorder.start();
@@ -265,7 +268,7 @@ function updateRecTimer() {
 function stopRecording() {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
-    setStatus("Uploading audio…");
+    setStatus(liveSocket ? "Finishing local captions..." : "Preparing final transcription...");
     setRecordingState(false);
     stopBtn.disabled = true;
   }
@@ -316,14 +319,27 @@ async function createLiveSocket() {
   return socket;
 }
 
-function stopLiveTranscription() {
-  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send("stop");
+async function stopLiveTranscription(options = {}) {
+  const socket = liveSocket;
+  const waitForFinalChunk = Boolean(options.waitForFinalChunk);
+  let closed = Promise.resolve();
+  if (socket && socket.readyState !== WebSocket.CLOSED) {
+    closed = new Promise((resolve) => {
+      const timeout = window.setTimeout(resolve, 10000);
+      socket.addEventListener("close", () => {
+        window.clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+    });
+  }
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send("stop");
   if (liveAudioContext) {
     liveAudioNodes.forEach((node) => { try { node.disconnect(); } catch (error) {} });
     liveAudioNodes = [];
     liveAudioContext.close();
     liveAudioContext = null;
   }
+  if (waitForFinalChunk) await closed;
 }
 
 async function uploadRecording() {
