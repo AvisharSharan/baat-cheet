@@ -130,6 +130,9 @@ async function login(event) {
   event.preventDefault();
   loginError.hidden = true;
   loginBtn.disabled = true;
+  const label = loginBtn.querySelector("span");
+  const previousLabel = label ? label.textContent : loginBtn.textContent;
+  if (label) label.textContent = "Signing in";
   try {
     const response = await fetch("/api/auth/login", {
       method: "POST",
@@ -151,6 +154,7 @@ async function login(event) {
     loginError.hidden = false;
   } finally {
     loginBtn.disabled = false;
+    if (label) label.textContent = previousLabel;
   }
 }
 
