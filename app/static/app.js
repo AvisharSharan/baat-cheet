@@ -525,6 +525,16 @@ function updateControls(data, finalTranscript) {
 // Stable key — skip redundant DOM rewrites when content hasn't changed
 let _lastTranscriptKey = null;
 
+function isTranscriptNearBottom() {
+  return transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight < 80;
+}
+
+function scrollTranscriptToBottom() {
+  window.requestAnimationFrame(() => {
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  });
+}
+
 function renderTranscript(transcript, speakerNames, options = {}) {
   if (panelTranscript) panelTranscript.classList.toggle("transcript-processing", Boolean(options.processing));
 
@@ -568,6 +578,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   if (contentKey === _lastTranscriptKey) return;
   _lastTranscriptKey = contentKey;
 
+  const shouldFollowTranscript = isTranscriptNearBottom();
   transcriptEl.className = options.noSpeakerLabels ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn) => {
     if (options.noSpeakerLabels) {
@@ -576,6 +587,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
     const label = speakerNames[turn.speaker] || turn.speaker;
     return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
   }).join("");
+  if (shouldFollowTranscript) scrollTranscriptToBottom();
 }
 
 function updateMetrics(transcript, options = {}) {
