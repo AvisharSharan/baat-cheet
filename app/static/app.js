@@ -40,6 +40,7 @@ const speakerFooter      = document.querySelector("#speakerFooter");
 const rememberVoices     = document.querySelector("#rememberVoices");
 const momOutput          = document.querySelector("#momOutput");
 const exportLinks        = document.querySelector("#exportLinks");
+const panelTranscript    = document.querySelector(".panel-transcript");
 const panelMinutes       = document.querySelector(".panel-minutes");
 const speakerMetric      = document.querySelector("#speakerMetric");
 const turnMetric         = document.querySelector("#turnMetric");
@@ -511,23 +512,32 @@ function updateControls(data, finalTranscript) {
   rememberVoices.title = voiceprintHint(data);
 }
 
+// Stable key — skip redundant DOM rewrites when content hasn't changed
+let _lastTranscriptKey = null;
+
 function renderTranscript(transcript, speakerNames, options = {}) {
+  if (panelTranscript) panelTranscript.classList.toggle("transcript-processing", Boolean(options.processing));
+
   if (!transcript.length) {
-    transcriptEl.className = "transcript transcript-empty";
-    transcriptEl.innerHTML = options.processing
-      ? aiProcessingBlock("Final transcription running", "Keeping captions here while the local diarized transcript is prepared.")
-      : `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/><path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
-    speakerEditor.innerHTML = "";
-    speakerFooter.hidden = true;
-    rememberVoices.checked = false;
-    rememberVoices.disabled = true;
-    updateMetrics([]);
+    if (_lastTranscriptKey !== "") {
+      transcriptEl.className = "transcript transcript-empty";
+      transcriptEl.innerHTML = `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/><path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
+      speakerEditor.innerHTML = "";
+      speakerFooter.hidden = true;
+      rememberVoices.checked = false;
+      rememberVoices.disabled = true;
+      updateMetrics([]);
+      _lastTranscriptKey = "";
+    }
     if (transcriptBadge) {
       transcriptBadge.textContent = options.processing ? "Processing" : "";
       transcriptBadge.hidden = !options.processing;
     }
     return;
   }
+
+  // Key changes only when new turns arrive or the last turn's text updates
+  const contentKey = `${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
   updateMetrics(transcript);
@@ -539,17 +549,17 @@ function renderTranscript(transcript, speakerNames, options = {}) {
 
   speakerFooter.hidden = options.skipSpeakerEditor || !speakers.length;
 
-  // Show badge with turn count
   if (transcriptBadge) {
     transcriptBadge.textContent = options.processing ? "Finalizing" : `${transcript.length} turns`;
     transcriptBadge.hidden = false;
   }
 
+  // Skip the innerHTML rewrite entirely if nothing changed
+  if (contentKey === _lastTranscriptKey) return;
+  _lastTranscriptKey = contentKey;
+
   transcriptEl.className = "transcript";
-  const processingBanner = options.processing
-    ? aiProcessingBanner("Final transcription running", "Live captions stay visible until the diarized transcript is ready.")
-    : "";
-  transcriptEl.innerHTML = processingBanner + transcript.map((turn) => {
+  transcriptEl.innerHTML = transcript.map((turn) => {
     const label = speakerNames[turn.speaker] || turn.speaker;
     return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
   }).join("");
@@ -598,12 +608,6 @@ async function generateMom() {
 function setMomGenerating(active) {
   if (active) {
     panelMinutes.classList.add("mom-generating");
-    if (!panelMinutes.querySelector(".mom-generating-label")) {
-      const label = document.createElement("div");
-      label.className = "mom-generating-label";
-      label.innerHTML = aiProcessingInline("Drafting minutes", "Structuring decisions, actions, and open questions.");
-      panelMinutes.appendChild(label);
-    }
   } else {
     panelMinutes.classList.remove("mom-generating");
     const label = panelMinutes.querySelector(".mom-generating-label");
@@ -636,6 +640,7 @@ function statusLabel(data) {
 function resetSessionOutput() {
   meetingId = null;
   liveTranscript = [];
+  _lastTranscriptKey = null;
   setMomGenerating(false);
   if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
   clearRecordingPlayback();
