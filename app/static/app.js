@@ -13,6 +13,9 @@ let cleanupGlow = null;
 let recTimerInterval = null;
 let recStartTime = null;
 const liveSampleRate = 16000;
+const authTokenKey = "momAuthToken";
+let authToken = localStorage.getItem(authTokenKey) || "";
+let currentUsername = "";
 
 // DOM refs
 const workflowMode       = document.querySelector("#workflowMode");
@@ -59,6 +62,14 @@ const recordingStatus    = document.querySelector("#recordingStatus");
 const recTimer           = document.querySelector("#recTimer");
 const transcriptBadge    = document.querySelector("#transcriptBadge");
 const emptyTranscriptMsg = document.querySelector("#emptyTranscriptMsg");
+const loginView          = document.querySelector("#loginView");
+const loginForm          = document.querySelector("#loginForm");
+const loginUsername      = document.querySelector("#loginUsername");
+const loginPassword      = document.querySelector("#loginPassword");
+const loginBtn           = document.querySelector("#loginBtn");
+const loginError         = document.querySelector("#loginError");
+const userChip           = document.querySelector("#userChip");
+const logoutBtn          = document.querySelector("#logoutBtn");
 
 // Init
 modeBtns.forEach(btn => btn.addEventListener("click", () => setWorkflowMode(btn.dataset.mode)));
@@ -73,6 +84,8 @@ themeToggle.addEventListener("click", toggleTheme);
 newMeetingBtn.addEventListener("click", startNewMeeting);
 historyTabBtn.addEventListener("click", showHistory);
 refreshHistoryBtn.addEventListener("click", loadHistory);
+loginForm.addEventListener("submit", login);
+logoutBtn.addEventListener("click", logout);
 
 // File drag-and-drop
 fileDropZone.addEventListener("dragover", (e) => { e.preventDefault(); fileDropZone.classList.add("drag-over"); });
@@ -93,7 +106,95 @@ syncThemeToggle();
 syncLiveCaptionPreference();
 updateWorkflowUI();
 meetingName.value = defaultMeetingName();
-loadHistory();
+bootstrapAuth();
+
+// AUTH
+async function bootstrapAuth() {
+  if (!authToken) {
+    showLogin();
+    return;
+  }
+  try {
+    const response = await apiFetch("/api/auth/me");
+    if (!response.ok) throw new Error("Session expired");
+    const user = await response.json();
+    showApp(user.username);
+  } catch (error) {
+    authToken = "";
+    localStorage.removeItem(authTokenKey);
+    showLogin();
+  }
+}
+
+async function login(event) {
+  event.preventDefault();
+  loginError.hidden = true;
+  loginBtn.disabled = true;
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: loginUsername.value.trim(),
+        password: loginPassword.value,
+      }),
+    });
+    if (!response.ok) throw new Error("Invalid username or password");
+    const data = await response.json();
+    authToken = data.access_token;
+    currentUsername = data.username;
+    localStorage.setItem(authTokenKey, authToken);
+    loginPassword.value = "";
+    showApp(currentUsername);
+  } catch (error) {
+    loginError.textContent = error.message || "Could not sign in";
+    loginError.hidden = false;
+  } finally {
+    loginBtn.disabled = false;
+  }
+}
+
+function logout() {
+  authToken = "";
+  currentUsername = "";
+  localStorage.removeItem(authTokenKey);
+  stopLiveTranscription();
+  stopActiveCapture();
+  if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
+  showLogin();
+}
+
+function showLogin() {
+  document.body.classList.add("auth-pending");
+  loginView.hidden = false;
+  userChip.hidden = true;
+  logoutBtn.hidden = true;
+  setStatus("Sign in required");
+  window.setTimeout(() => loginUsername.focus(), 0);
+}
+
+function showApp(username) {
+  currentUsername = username || currentUsername;
+  document.body.classList.remove("auth-pending");
+  loginView.hidden = true;
+  userChip.textContent = currentUsername;
+  userChip.hidden = false;
+  logoutBtn.hidden = false;
+  setStatus("Ready");
+  loadHistory();
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) {
+    authToken = "";
+    localStorage.removeItem(authTokenKey);
+    showLogin();
+  }
+  return response;
+}
 
 // ─── RECORDING ────────────────────────────────────────────────
 async function startRecording() {
@@ -183,7 +284,7 @@ async function startLiveTranscription(stream) {
 
 async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=2`);
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=2&token=${encodeURIComponent(authToken)}`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -243,7 +344,7 @@ async function uploadMeetingFile(file, filename) {
   setStatus("Uploading recording…");
   setUploadBusy(true);
 
-  const response = await fetch("/api/meetings/audio", { method: "POST", body: form });
+  const response = await apiFetch("/api/meetings/audio", { method: "POST", body: form });
   if (!response.ok) { setStatus("Upload failed"); setUploadBusy(false); return; }
 
   const data = await response.json();
@@ -258,7 +359,7 @@ async function uploadMeetingFile(file, filename) {
 
 async function pollStatus() {
   if (!meetingId) return;
-  const response = await fetch(`/api/meetings/${meetingId}/status`);
+  const response = await apiFetch(`/api/meetings/${meetingId}/status`);
   const data = await response.json();
   renderState(data);
   if (["transcribed", "ready", "failed"].includes(data.status) && pollTimer) {
@@ -283,11 +384,11 @@ function renderState(data) {
     momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
     exportLinks.innerHTML = `
-      <a href="/api/meetings/${data.id}/export.md">
+      <a href="/api/meetings/${data.id}/export.md?token=${encodeURIComponent(authToken)}">
         <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
         MD
       </a>
-      <a href="/api/meetings/${data.id}/export.pdf">
+      <a href="/api/meetings/${data.id}/export.pdf?token=${encodeURIComponent(authToken)}">
         <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
         PDF
       </a>`;
@@ -298,7 +399,7 @@ function renderState(data) {
 
 async function loadHistory() {
   try {
-    const response = await fetch("/api/meetings");
+    const response = await apiFetch("/api/meetings");
     if (!response.ok) throw new Error("Could not load meeting history");
     renderHistory(await response.json());
   } catch (error) {
@@ -346,7 +447,7 @@ function renderHistory(meetings) {
 
 async function openHistoryMeeting(id) {
   if (!id) return;
-  const response = await fetch(`/api/meetings/${id}/status`);
+  const response = await apiFetch(`/api/meetings/${id}/status`);
   if (!response.ok) { setStatus("Meeting not found"); return; }
   renderState(await response.json());
   showMeeting();
@@ -357,7 +458,7 @@ async function deleteHistoryMeeting(id, name) {
   if (!id) return;
   const label = name || "this meeting";
   if (!window.confirm(`Delete "${label}" from history?`)) return;
-  const response = await fetch(`/api/meetings/${id}`, { method: "DELETE" });
+  const response = await apiFetch(`/api/meetings/${id}`, { method: "DELETE" });
   if (!response.ok) {
     setStatus("Could not delete meeting");
     return;
@@ -464,7 +565,7 @@ async function saveSpeakers() {
   speakerEditor.querySelectorAll("input").forEach((input) => {
     speakers[input.dataset.speaker] = input.value;
   });
-  const response = await fetch(`/api/meetings/${meetingId}/speakers`, {
+  const response = await apiFetch(`/api/meetings/${meetingId}/speakers`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ speakers, remember_voices: rememberVoices.checked }),
@@ -478,7 +579,7 @@ async function generateMom() {
   setStatus("Drafting minutes…");
   momBtn.disabled = true;
   setMomGenerating(true);
-  const response = await fetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
+  const response = await apiFetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
   renderState(await response.json());
 }
 

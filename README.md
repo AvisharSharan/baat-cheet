@@ -98,6 +98,12 @@ HF_TOKEN=your_hugging_face_token
 
 MOM_MEETINGS_PATH=data/meetings.json
 
+LOCAL_AUTH_USERNAME=admin
+LOCAL_AUTH_PASSWORD=admin
+# Optional: use LOCAL_AUTH_PASSWORD_HASH instead of LOCAL_AUTH_PASSWORD for PBKDF2 storage.
+JWT_SECRET=change_this_local_secret
+JWT_EXPIRES_MINUTES=720
+
 MOM_PROVIDER=ollama
 OLLAMA_MOM_MODEL=qwen2.5:7b
 OLLAMA_BASE_URL=http://127.0.0.1:11434

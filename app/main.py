@@ -10,10 +10,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
 from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
@@ -40,8 +41,20 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.post("/api/auth/login", response_model=AuthTokenResponse)
+async def login(request: LoginRequest) -> AuthTokenResponse:
+    user = authenticate_user(request.username, request.password)
+    return AuthTokenResponse(access_token=create_access_token(user), username=user.username)
+
+
+@app.get("/api/auth/me", response_model=CurrentUser)
+async def me(user: CurrentUser = Depends(current_user)) -> CurrentUser:
+    return user
+
+
 @app.websocket("/api/live/transcribe")
 async def live_transcribe(websocket: WebSocket) -> None:
+    await websocket_user(websocket)
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
     chunk_seconds = int(websocket.query_params.get("chunk_seconds", "2"))
@@ -104,6 +117,7 @@ async def upload_audio(
     audio: UploadFile = File(...),
     num_speakers: int | None = Form(default=None),
     meeting_name: str | None = Form(default=None),
+    _: CurrentUser = Depends(current_user),
 ) -> MeetingCreateResponse:
     if num_speakers is not None and not 1 <= num_speakers <= 10:
         raise HTTPException(status_code=422, detail="num_speakers must be between 1 and 10.")
@@ -128,18 +142,18 @@ async def upload_audio(
 
 
 @app.get("/api/meetings", response_model=list[MeetingHistoryItem])
-async def list_meetings() -> list[MeetingHistoryItem]:
+async def list_meetings(_: CurrentUser = Depends(current_user)) -> list[MeetingHistoryItem]:
     return [MeetingHistoryItem.from_state(meeting) for meeting in store.list()]
 
 
 @app.get("/api/meetings/{meeting_id}/status", response_model=MeetingStatusResponse)
-async def get_status(meeting_id: str) -> MeetingStatusResponse:
+async def get_status(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
     return MeetingStatusResponse.from_state(meeting)
 
 
 @app.delete("/api/meetings/{meeting_id}", status_code=204)
-async def delete_meeting(meeting_id: str) -> Response:
+async def delete_meeting(meeting_id: str, _: CurrentUser = Depends(current_user)) -> Response:
     try:
         meeting = store.delete(meeting_id)
     except KeyError as exc:
@@ -149,7 +163,11 @@ async def delete_meeting(meeting_id: str) -> Response:
 
 
 @app.patch("/api/meetings/{meeting_id}/speakers", response_model=MeetingStatusResponse)
-async def update_speakers(meeting_id: str, update: SpeakerUpdate) -> MeetingStatusResponse:
+async def update_speakers(
+    meeting_id: str,
+    update: SpeakerUpdate,
+    _: CurrentUser = Depends(current_user),
+) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
     blank_keys = [key for key, value in update.speakers.items() if not value.strip()]
     if blank_keys:
@@ -168,7 +186,7 @@ async def update_speakers(meeting_id: str, update: SpeakerUpdate) -> MeetingStat
 
 
 @app.post("/api/meetings/{meeting_id}/mom", response_model=MeetingStatusResponse)
-async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
+async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
     if not meeting.transcript:
         raise HTTPException(status_code=409, detail="No transcript is available.")
@@ -191,7 +209,12 @@ async def generate_mom(meeting_id: str) -> MeetingStatusResponse:
 
 
 @app.get("/api/meetings/{meeting_id}/export.md")
-async def export_markdown(meeting_id: str) -> PlainTextResponse:
+async def export_markdown(
+    meeting_id: str,
+    token: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> PlainTextResponse:
+    _authorize_export(token, authorization)
     meeting = _get_meeting(meeting_id)
     if not meeting.mom_markdown:
         raise HTTPException(status_code=404, detail="MoM is not available.")
@@ -202,7 +225,12 @@ async def export_markdown(meeting_id: str) -> PlainTextResponse:
 
 
 @app.get("/api/meetings/{meeting_id}/export.pdf")
-async def export_pdf(meeting_id: str) -> Response:
+async def export_pdf(
+    meeting_id: str,
+    token: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> Response:
+    _authorize_export(token, authorization)
     meeting = _get_meeting(meeting_id)
     if not meeting.mom_markdown:
         raise HTTPException(status_code=404, detail="MoM is not available.")
@@ -273,6 +301,13 @@ def _get_meeting(meeting_id: str) -> MeetingState:
         return store.get(meeting_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Meeting not found.") from exc
+
+
+def _authorize_export(token: str | None, authorization: str | None) -> None:
+    if authorization:
+        user_from_authorization(authorization)
+        return
+    user_from_token(token)
 
 
 def _meeting_name(raw_name: str | None, meeting_id: str) -> str:
