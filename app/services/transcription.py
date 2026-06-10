@@ -63,6 +63,43 @@ class FasterWhisperPyannoteTranscriptionClient:
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
     ) -> List[SpeakerTurn]:
+        if not self._should_predecode_for_diarization(num_speakers, speaker_labels_enabled):
+            return await self._transcribe_internal(audio_path, num_speakers, speaker_labels_enabled)
+
+        # Pre-decode once for the diarized path so pyannote can consume a stable
+        # WAV while Whisper and diarization run against the same audio timeline.
+        is_wav_16k = audio_path.lower().endswith(".wav") and await asyncio.to_thread(self._is_16k_wav, audio_path)
+
+        if is_wav_16k:
+            return await self._transcribe_internal(audio_path, num_speakers, speaker_labels_enabled)
+
+        with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+            wav_path = Path(handle.name)
+
+        try:
+            await asyncio.to_thread(_decode_audio_for_local_processing, audio_path, str(wav_path))
+            return await self._transcribe_internal(str(wav_path), num_speakers, speaker_labels_enabled)
+        finally:
+            wav_path.unlink(missing_ok=True)
+
+    def _should_predecode_for_diarization(self, num_speakers: int | None, speaker_labels_enabled: bool) -> bool:
+        diarization_enabled = os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}
+        return speaker_labels_enabled and num_speakers != 1 and diarization_enabled
+
+    def _is_16k_wav(self, path: str) -> bool:
+        try:
+            import wave
+            with wave.open(path, "rb") as f:
+                return f.getframerate() == 16000 and f.getnchannels() == 1
+        except Exception:
+            return False
+
+    async def _transcribe_internal(
+        self,
+        audio_path: str,
+        num_speakers: int | None = None,
+        speaker_labels_enabled: bool = True,
+    ) -> List[SpeakerTurn]:
         whisper_task = asyncio.to_thread(self._transcribe_with_faster_whisper, audio_path)
 
         if not speaker_labels_enabled:
@@ -262,48 +299,46 @@ def _pyannote_token_arg(pipeline_class: Any) -> str | None:
     return None
 
 
-def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> Dict[str, Any]:
+def _decode_audio_for_local_processing(input_path: str, output_path: str, sample_rate: int = 16000) -> None:
     try:
         import imageio_ffmpeg
+    except ImportError as exc:
+        raise TranscriptionError("Local processing requires imageio-ffmpeg to decode recordings.") from exc
+
+    result = subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-y",
+            "-i",
+            input_path,
+            "-ac",
+            "1",
+            "-ar",
+            str(sample_rate),
+            "-vn",
+            output_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "ffmpeg conversion failed").strip()
+        raise TranscriptionError(f"Could not decode recording: {detail[-800:]}")
+
+
+def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> Dict[str, Any]:
+    try:
         import torchaudio
     except ImportError as exc:
-        raise TranscriptionError(
-            "Local diarization requires imageio-ffmpeg and torchaudio to decode recordings for pyannote."
-        ) from exc
+        raise TranscriptionError("Local diarization requires torchaudio to load decoded recordings.") from exc
 
-    with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
-        wav_path = Path(handle.name)
-
-    try:
-        result = subprocess.run(
-            [
-                imageio_ffmpeg.get_ffmpeg_exe(),
-                "-y",
-                "-i",
-                audio_path,
-                "-ac",
-                "1",
-                "-ar",
-                str(sample_rate),
-                "-vn",
-                str(wav_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "ffmpeg conversion failed").strip()
-            raise TranscriptionError(f"Could not decode recording for diarization: {detail[-800:]}")
-
-        waveform, decoded_sample_rate = torchaudio.load(str(wav_path))
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        if int(decoded_sample_rate) != sample_rate:
-            waveform = torchaudio.functional.resample(waveform, int(decoded_sample_rate), sample_rate)
-        return {"waveform": waveform, "sample_rate": sample_rate}
-    finally:
-        wav_path.unlink(missing_ok=True)
+    waveform, decoded_sample_rate = torchaudio.load(audio_path)
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if int(decoded_sample_rate) != sample_rate:
+        waveform = torchaudio.functional.resample(waveform, int(decoded_sample_rate), sample_rate)
+    return {"waveform": waveform, "sample_rate": sample_rate}
 
 
 def _assign_speakers_to_segments(
