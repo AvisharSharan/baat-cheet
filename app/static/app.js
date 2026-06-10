@@ -7,9 +7,8 @@ let activeAudioContext = null;
 let liveAudioContext = null;
 let liveSocket = null;
 let liveAudioNodes = [];
-let recordingUrl = null;
 let liveTranscript = [];
-let cleanupOverlayActive = false;
+let recordingUrl = null;
 let cleanupGlow = null;
 let recTimerInterval = null;
 let recStartTime = null;
@@ -114,7 +113,7 @@ async function startRecording() {
     };
     if (liveCaptionsToggle.checked) await startLiveTranscription(stream);
     recorder.start();
-    setStatus(liveCaptionsToggle.checked ? "Recording — live captions on" : "Recording");
+    setStatus(liveCaptionsToggle.checked ? "Recording - local captions" : "Recording");
     setRecordingState(true);
   } catch (error) {
     stopActiveCapture();
@@ -167,6 +166,7 @@ async function startLiveTranscription(stream) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   liveAudioContext = new AudioContextClass();
   await liveAudioContext.audioWorklet.addModule("/static/pcm-worklet.js");
+
   const source = liveAudioContext.createMediaStreamSource(stream);
   const processor = new AudioWorkletNode(liveAudioContext, "pcm-capture-processor");
   const mutedOutput = liveAudioContext.createGain();
@@ -183,30 +183,33 @@ async function startLiveTranscription(stream) {
 
 async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe`);
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=2`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
     const payload = JSON.parse(event.data);
+    if (payload.type === "state" && payload.message) {
+      setStatus(payload.message);
+    }
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = liveTranscript.concat(payload.turns);
-      renderTranscript(liveTranscript, { Live: "Live" });
-      setStatus("Recording — live captions");
+      renderTranscript(liveTranscript, { Live: "Live" }, { skipSpeakerEditor: true });
+      setStatus("Recording - local captions");
     }
-    if (payload.type === "error") setStatus(`Live captions failed: ${payload.message}`);
+    if (payload.type === "error") setStatus(`Local captions failed: ${payload.message}`);
   };
   socket.onclose = () => { liveSocket = null; };
   await new Promise((resolve, reject) => {
     socket.onopen = resolve;
-    socket.onerror = () => reject(new Error("Live transcription connection failed"));
+    socket.onerror = () => reject(new Error("Local caption connection failed"));
   });
-  socket.onerror = () => setStatus("Live transcription connection failed");
+  socket.onerror = () => setStatus("Local caption connection failed");
   return socket;
 }
 
 function stopLiveTranscription() {
   if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send("stop");
   if (liveAudioContext) {
-    liveAudioNodes.forEach((node) => { try { node.disconnect(); } catch (e) {} });
+    liveAudioNodes.forEach((node) => { try { node.disconnect(); } catch (error) {} });
     liveAudioNodes = [];
     liveAudioContext.close();
     liveAudioContext = null;
@@ -246,7 +249,7 @@ async function uploadMeetingFile(file, filename) {
   const data = await response.json();
   meetingId = data.id;
   meetingName.value = data.name || meetingName.value;
-  setStatus("Transcribing with Sarvam…");
+  setStatus("Transcribing locally…");
   showMeeting();
   loadHistory();
   pollStatus();
@@ -270,15 +273,11 @@ function renderState(data) {
   if (data.name) meetingName.value = data.name;
   setStatus(statusLabel(data));
   const finalTranscript = data.transcript || [];
-  const keepLiveTranscript = data.status === "transcribing" && finalTranscript.length === 0 && liveTranscript.length > 0;
-  if (finalTranscript.length > 0) { liveTranscript = []; cleanupOverlayActive = false; destroyCleanupGlow(); }
-  if (keepLiveTranscript && cleanupOverlayActive) { updateControls(data, finalTranscript); return; }
+  if (finalTranscript.length > 0) liveTranscript = [];
   renderTranscript(
-    keepLiveTranscript ? liveTranscript : finalTranscript,
-    keepLiveTranscript ? { Live: "Live captions" } : data.speaker_names || {},
-    { cleanupOverlay: keepLiveTranscript, skipSpeakerEditor: keepLiveTranscript }
+    finalTranscript,
+    data.speaker_names || {},
   );
-  cleanupOverlayActive = keepLiveTranscript;
   if (data.mom_markdown) {
     setMomGenerating(false);
     momOutput.classList.remove("mom-empty");
@@ -369,7 +368,7 @@ function showMeeting() {
 function updateControls(data, finalTranscript) {
   const busy = data.status === "transcribing" || data.status === "generating";
   setUploadBusy(busy);
-  momBtn.disabled = !finalTranscript.length || data.status === "transcribing" || data.status === "generating";
+  momBtn.disabled = !finalTranscript.length || data.status === "generating";
   saveSpeakersBtn.disabled = !finalTranscript.length;
   rememberVoices.disabled = !finalTranscript.length || !data.voiceprints_ready;
   rememberVoices.title = voiceprintHint(data);
@@ -407,7 +406,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
 
   transcriptEl.className = "transcript";
   const cleanupOverlay = options.cleanupOverlay
-    ? '<div class="cleanup-overlay" aria-live="polite"><div class="cleanup-dots"></div><div class="cleanup-glow"></div><div class="cleanup-text">Cleaning up with Sarvam</div></div>'
+    ? '<div class="cleanup-overlay" aria-live="polite"><div class="cleanup-dots"></div><div class="cleanup-glow"></div><div class="cleanup-text">Finalizing locally</div></div>'
     : "";
   transcriptEl.innerHTML = cleanupOverlay + transcript.map((turn) => {
     const label = speakerNames[turn.speaker] || turn.speaker;
@@ -487,7 +486,7 @@ function setStatus(text) {
 function statusLabel(data) {
   if (data.error) return `${data.status}: ${data.error}`;
   if (data.status === "uploaded") return "Uploaded";
-  if (data.status === "transcribing") return "Transcribing with Sarvam";
+  if (data.status === "transcribing") return "Transcribing locally";
   if (data.status === "transcribed") return "Transcript ready";
   if (data.status === "generating") return "Drafting minutes";
   if (data.status === "ready") return "Minutes ready";
@@ -497,7 +496,6 @@ function statusLabel(data) {
 function resetSessionOutput() {
   meetingId = null;
   liveTranscript = [];
-  cleanupOverlayActive = false;
   destroyCleanupGlow();
   setMomGenerating(false);
   if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
@@ -549,16 +547,15 @@ function updateWorkflowUI() {
   uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
   recordedFile.disabled = false;
 
-  // Update hint text
   if (recorded) {
     workflowHint.textContent = "Upload a finished audio or video recording for batch transcription, speaker labels, and voice matching.";
     if (transcriptSub) transcriptSub.textContent = "Final transcript after upload";
   } else if (liveCaptionsToggle.checked) {
-    workflowHint.textContent = "Live captions stream during recording. Final audio uploaded for Sarvam diarization after stop.";
-    if (transcriptSub) transcriptSub.textContent = "Live captions during recording, final transcript after upload";
+    workflowHint.textContent = "Local captions preview during recording. Final upload still runs full diarized transcription.";
+    if (transcriptSub) transcriptSub.textContent = "Local captions during recording, final transcript after upload";
   } else {
-    workflowHint.textContent = "Live captions are off. Final audio is still uploaded for Sarvam diarization after stop.";
-    if (transcriptSub) transcriptSub.textContent = "Live captions off — final transcript after upload";
+    workflowHint.textContent = "Record meeting audio, then finalize with local faster-whisper transcription and pyannote diarization.";
+    if (transcriptSub) transcriptSub.textContent = "Final local transcript after upload";
   }
   refreshEmptyTranscriptMessage();
 }
@@ -732,10 +729,10 @@ function syncLiveCaptionPreference() {
 }
 
 function emptyTranscriptMessage() {
-  if (workflowMode.value === "recorded") return "Upload a recording to create a Sarvam diarized transcript.";
+  if (workflowMode.value === "recorded") return "Upload a recording to create a local diarized transcript.";
   return liveCaptionsToggle.checked
-    ? "Start recording to see live captions, then stop to finalize with Sarvam diarization."
-    : "Start recording — live captions are off. Stop to create the diarized transcript.";
+    ? "Start recording to see local caption previews, then stop for the final diarized transcript."
+    : "Start recording, then stop to finalize with local transcription and diarization.";
 }
 
 function refreshEmptyTranscriptMessage() {

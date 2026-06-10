@@ -111,11 +111,10 @@
                   <svg class="select-caret" width="11" height="11" viewBox="0 0 11 11"><path d="M2 4l3.5 3.5L9 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
               </div>
-
               <label class="toggle-row" for="liveCaptionsToggle">
                 <div class="toggle-info">
                   <span class="toggle-name">Live captions</span>
-                  <span class="toggle-detail">Sarvam streaming</span>
+                  <span class="toggle-detail">Local preview</span>
                 </div>
                 <input id="liveCaptionsToggle" type="checkbox" checked />
                 <span class="pill-switch" aria-hidden="true"></span>
@@ -237,7 +236,7 @@
             </div>
           </div>
 
-          <p class="workflow-hint" id="workflowHint">Live captions stream during recording. Final audio uploaded for Sarvam diarization after stop.</p>
+          <p class="workflow-hint" id="workflowHint">Record or upload meeting audio, then finalize locally with faster-whisper transcription and pyannote diarization.</p>
         </aside>
 
         <!-- RIGHT: CONTENT -->
@@ -253,7 +252,7 @@
                   <h2>Transcript</h2>
                   <span class="panel-badge" id="transcriptBadge" hidden></span>
                 </div>
-                <p class="panel-sub" id="transcriptSub">Start recording to capture live captions</p>
+                <p class="panel-sub" id="transcriptSub">Local captions during recording, final transcript after upload</p>
               </div>
               <div id="transcript" class="transcript transcript-empty">
                 <div class="empty-state">
@@ -265,7 +264,7 @@
                     </svg>
                   </div>
                   <strong>No transcript yet</strong>
-                  <span id="emptyTranscriptMsg">Start recording to see live captions, then stop to finalize with Sarvam diarization.</span>
+                  <span id="emptyTranscriptMsg">Start recording, then stop to finalize with local transcription and diarization.</span>
                 </div>
               </div>
             </div>
@@ -317,7 +316,7 @@
       </div>
 
       <footer class="footer">
-        <span>Transcription by Sarvam AI</span>
+        <span>Local transcription by faster-whisper and pyannote</span>
         <span class="sep">&middot;</span>
         <span>Minutes by local Qwen</span>
       </footer>

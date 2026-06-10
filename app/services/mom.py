@@ -75,14 +75,16 @@ class MomGenerationClient:
             {"role": "user", "content": prompt},
         ]
         if self.provider == "ollama":
+            options = {
+                "temperature": 0.1,
+                "num_ctx": _env_int("OLLAMA_NUM_CTX", 8192),
+                "num_predict": self.max_tokens,
+                "num_gpu": _env_int("OLLAMA_NUM_GPU", 0),
+            }
             return {
                 "model": self.model,
                 "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "num_ctx": _env_int("OLLAMA_NUM_CTX", 8192),
-                    "num_predict": self.max_tokens,
-                },
+                "options": options,
                 "messages": messages,
             }
         return {

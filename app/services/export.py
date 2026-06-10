@@ -13,13 +13,14 @@ MARGIN_X = 46
 MARGIN_TOP = 54
 MARGIN_BOTTOM = 44
 
-BRAND_GREEN = colors.HexColor("#1f6f5b")
-INK = colors.HexColor("#17211d")
-MUTED = colors.HexColor("#66746c")
-LINE = colors.HexColor("#d8e0dc")
-PAPER = colors.HexColor("#fbfcfb")
-SECTION_TINT = colors.HexColor("#edf4f1")
-TABLE_HEADER = colors.HexColor("#dfece7")
+BRAND_BLUE = colors.HexColor("#005BFF")
+INK = colors.HexColor("#121212")
+MUTED = colors.HexColor("#737373")
+LINE = colors.HexColor("#d9dce1")
+PAPER = colors.HexColor("#ffffff")
+SECTION_TINT = colors.HexColor("#f0f4ff")
+TABLE_HEADER = colors.HexColor("#e6f0ff")
+TABLE_ALT_ROW = colors.HexColor("#f8fafe")
 
 
 def markdown_to_pdf(markdown_text: str) -> bytes:
@@ -92,7 +93,7 @@ def _pdf_styles():
             fontName="Helvetica-Bold",
             fontSize=13,
             leading=17,
-            textColor=BRAND_GREEN,
+            textColor=BRAND_BLUE,
             backColor=SECTION_TINT,
             borderPadding=(5, 8, 5, 8),
             spaceBefore=8,
@@ -119,7 +120,7 @@ def _pdf_styles():
             bulletIndent=4,
             bulletFontName="Helvetica-Bold",
             bulletFontSize=9,
-            bulletColor=BRAND_GREEN,
+            bulletColor=BRAND_BLUE,
         )
     )
     styles.add(
@@ -153,7 +154,7 @@ def _draw_page(canvas, doc) -> None:
     canvas.line(MARGIN_X, PAGE_HEIGHT - 34, PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 34)
     canvas.line(MARGIN_X, 32, PAGE_WIDTH - MARGIN_X, 32)
 
-    canvas.setFillColor(BRAND_GREEN)
+    canvas.setFillColor(BRAND_BLUE)
     canvas.setFont("Helvetica-Bold", 8)
     canvas.drawString(MARGIN_X, PAGE_HEIGHT - 25, "MINUTES OF MEETING")
 
@@ -202,7 +203,7 @@ def _build_table(table_lines: list[str], styles) -> Table:
                 ("BACKGROUND", (0, 0), (-1, 0), TABLE_HEADER),
                 ("TEXTCOLOR", (0, 0), (-1, 0), INK),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("LINEBELOW", (0, 0), (-1, 0), 0.8, BRAND_GREEN),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.8, BRAND_BLUE),
                 ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
                 ("BOX", (0, 0), (-1, -1), 0.7, LINE),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -210,7 +211,7 @@ def _build_table(table_lines: list[str], styles) -> Table:
                 ("RIGHTPADDING", (0, 0), (-1, -1), 7),
                 ("TOPPADDING", (0, 0), (-1, -1), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6faf8")]),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, TABLE_ALT_ROW]),
             ]
         )
     )
