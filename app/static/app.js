@@ -720,8 +720,8 @@ function aiProcessingBlock(title, detail) {
 }
 
 function aiProcessingInline(title, detail) {
-  return `<div class="ai-core" aria-hidden="true"><span></span><span></span><span></span></div>
-    <div class="ai-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></div>`;
+  return `<div class="loading-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></div>
+    <div class="loading-gradient" aria-hidden="true"></div>`;
 }
 
 // ─── AUDIO UTILS ──────────────────────────────────────────────

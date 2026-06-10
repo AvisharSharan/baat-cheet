@@ -1258,18 +1258,16 @@ h2 {
   font-weight: 400;
 }
 
-/* AI processing status */
+/* Processing status */
 .ai-processing-banner,
 .ai-processing-block,
 .mom-generating-label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid color-mix(in srgb, var(--gold) 30%, var(--border));
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--gold) 12%, var(--bg-3)), var(--bg-2)),
-    radial-gradient(circle at 15% 20%, var(--gold-dim), transparent 35%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 12px 32px rgba(0,0,0,0.22);
+    linear-gradient(135deg, color-mix(in srgb, var(--gold) 8%, var(--bg-3)), var(--bg-2));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 10px 24px rgba(0,0,0,0.16);
 }
 
 .ai-processing-banner {
@@ -1289,76 +1287,47 @@ h2 {
   border-radius: var(--r);
 }
 
-.ai-core {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
-  background: color-mix(in srgb, var(--gold) 10%, var(--bg-3));
-}
-
-.ai-core::before,
-.ai-core::after {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-  animation: aiRing 1.9s linear infinite;
-}
-
-.ai-core::after {
-  inset: 11px;
-  border-color: color-mix(in srgb, var(--green) 55%, transparent);
-  animation-duration: 1.3s;
-  animation-direction: reverse;
-}
-
-.ai-core span {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--gold-2);
-  box-shadow: 0 0 12px var(--gold-glow);
-  animation: aiNode 1.4s ease-in-out infinite;
-}
-
-.ai-core span:nth-child(1) { transform: translate(-8px, -5px); }
-.ai-core span:nth-child(2) { transform: translate(7px, -2px); animation-delay: 0.18s; }
-.ai-core span:nth-child(3) { transform: translate(0, 9px); animation-delay: 0.36s; }
-
-.ai-copy {
+.loading-copy {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
-.ai-copy strong {
+.loading-copy strong {
   color: var(--text);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
 }
 
-.ai-copy span {
+.loading-copy span {
   color: var(--text-3);
   font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.45;
 }
 
-@keyframes aiRing {
-  to { transform: rotate(360deg); }
+.loading-gradient {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-4);
 }
 
-@keyframes aiNode {
-  0%, 100% { opacity: 0.45; filter: blur(0); }
-  50% { opacity: 1; filter: blur(0.5px); }
+.loading-gradient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--gold), var(--green), transparent);
+  animation: loadingSweep 1.25s ease-in-out infinite;
+}
+
+@keyframes loadingSweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(250%); }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1406,7 +1375,7 @@ h2 {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--gold) 9%, transparent), transparent 38%),
     radial-gradient(circle at 72% 22%, color-mix(in srgb, var(--green) 10%, transparent), transparent 32%);
-  animation: aiPanelPulse 2.4s ease-in-out infinite;
+  animation: loadingPanelPulse 2.4s ease-in-out infinite;
 }
 
 .panel-minutes.mom-generating::after {
@@ -1430,7 +1399,7 @@ h2 {
   padding: 16px;
   border-radius: var(--r);
   backdrop-filter: blur(12px);
-  animation: aiCardIn 0.28s ease;
+  animation: loadingCardIn 0.28s ease;
   pointer-events: none;
 }
 
@@ -1438,12 +1407,12 @@ html[data-theme="light"] .mom-generating-label {
   box-shadow: 0 14px 34px rgba(0,0,0,0.08);
 }
 
-@keyframes aiPanelPulse {
+@keyframes loadingPanelPulse {
   0%, 100% { opacity: 0.58; }
   50% { opacity: 1; }
 }
 
-@keyframes aiCardIn {
+@keyframes loadingCardIn {
   from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); }
   to { opacity: 1; transform: translate(-50%, -50%); }
 }
