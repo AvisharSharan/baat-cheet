@@ -53,11 +53,10 @@ class FasterWhisperPyannoteTranscriptionClient:
         self.hf_token = hf_token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
 
     async def transcribe(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
-        return await asyncio.to_thread(self._transcribe_sync, audio_path, num_speakers)
+        whisper_task = asyncio.to_thread(self._transcribe_with_faster_whisper, audio_path)
 
-    def _transcribe_sync(self, audio_path: str, num_speakers: int | None = None) -> List[SpeakerTurn]:
-        segments = self._transcribe_with_faster_whisper(audio_path)
         if num_speakers == 1 or os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() in {"none", "off", "0", "false"}:
+            segments = await whisper_task
             return [
                 SpeakerTurn(
                     speaker="Speaker 1",
@@ -67,7 +66,10 @@ class FasterWhisperPyannoteTranscriptionClient:
                 )
                 for segment in segments
             ]
-        diarization = self._diarize_with_pyannote(audio_path, num_speakers)
+
+        diarization_task = asyncio.to_thread(self._diarize_with_pyannote, audio_path, num_speakers)
+
+        segments, diarization = await asyncio.gather(whisper_task, diarization_task)
         return _assign_speakers_to_segments(segments, diarization)
 
     def _transcribe_with_faster_whisper(self, audio_path: str) -> List[Dict[str, Any]]:
