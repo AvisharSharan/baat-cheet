@@ -1365,16 +1365,55 @@ html[data-theme="light"] .mom-generating-label {
 .history-item {
   width: 100%;
   display: grid;
-  gap: 8px;
-  padding: 14px 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
   border: 1px solid var(--border);
   border-radius: var(--r);
   background: var(--bg-3);
   color: var(--text);
   text-align: left;
   font-family: var(--font-sans);
-  cursor: pointer;
+  overflow: hidden;
   transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.history-open {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+}
+
+.history-delete {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.history-delete:hover {
+  border-color: color-mix(in srgb, #ff5a5f 45%, var(--border));
+  background: color-mix(in srgb, #ff5a5f 12%, transparent);
+  color: #ff5a5f;
 }
 
 .history-item:hover {

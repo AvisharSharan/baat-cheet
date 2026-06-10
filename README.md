@@ -96,6 +96,8 @@ PYANNOTE_DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
 PYANNOTE_DEVICE=cpu
 HF_TOKEN=your_hugging_face_token
 
+MOM_MEETINGS_PATH=data/meetings.json
+
 MOM_PROVIDER=ollama
 OLLAMA_MOM_MODEL=qwen2.5:7b
 OLLAMA_BASE_URL=http://127.0.0.1:11434

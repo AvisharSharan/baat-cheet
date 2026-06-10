@@ -314,7 +314,8 @@ function renderHistory(meetings) {
   historyList.innerHTML = meetings.map((meeting) => {
     const speakers = meeting.speakers && meeting.speakers.length ? meeting.speakers.join(", ") : "No speaker labels yet";
     const active = meeting.id === meetingId ? " active" : "";
-    return `<button class="history-item${active}" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
+    return `<div class="history-item${active}" data-meeting-id="${escapeHtml(meeting.id)}">
+      <button class="history-open" type="button" data-meeting-id="${escapeHtml(meeting.id)}">
       <div class="history-item-main">
         <span class="history-name">${escapeHtml(meeting.name)}</span>
         <span class="history-meta">${escapeHtml(formatDateTime(meeting.created_at))}</span>
@@ -325,12 +326,21 @@ function renderHistory(meetings) {
         <span>${meeting.word_count} words</span>
         ${meeting.mom_available ? "<span>Minutes ✓</span>" : ""}
       </div>
-      <div class="history-speakers">${escapeHtml(speakers)}</div>
-    </button>`;
+        <div class="history-speakers">${escapeHtml(speakers)}</div>
+      </button>
+      <div class="history-actions">
+        <button class="history-delete" type="button" data-meeting-id="${escapeHtml(meeting.id)}" data-meeting-name="${escapeHtml(meeting.name)}" title="Delete meeting" aria-label="Delete ${escapeHtml(meeting.name)}">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>`;
   }).join("");
 
-  historyList.querySelectorAll(".history-item").forEach((item) => {
+  historyList.querySelectorAll(".history-open").forEach((item) => {
     item.addEventListener("click", () => openHistoryMeeting(item.dataset.meetingId));
+  });
+  historyList.querySelectorAll(".history-delete").forEach((item) => {
+    item.addEventListener("click", () => deleteHistoryMeeting(item.dataset.meetingId, item.dataset.meetingName));
   });
 }
 
@@ -340,6 +350,23 @@ async function openHistoryMeeting(id) {
   if (!response.ok) { setStatus("Meeting not found"); return; }
   renderState(await response.json());
   showMeeting();
+  loadHistory();
+}
+
+async function deleteHistoryMeeting(id, name) {
+  if (!id) return;
+  const label = name || "this meeting";
+  if (!window.confirm(`Delete "${label}" from history?`)) return;
+  const response = await fetch(`/api/meetings/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    setStatus("Could not delete meeting");
+    return;
+  }
+  if (id === meetingId) {
+    resetSessionOutput();
+    meetingName.value = defaultMeetingName();
+  }
+  setStatus("Meeting deleted");
   loadHistory();
 }
 

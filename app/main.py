@@ -138,6 +138,16 @@ async def get_status(meeting_id: str) -> MeetingStatusResponse:
     return MeetingStatusResponse.from_state(meeting)
 
 
+@app.delete("/api/meetings/{meeting_id}", status_code=204)
+async def delete_meeting(meeting_id: str) -> Response:
+    try:
+        meeting = store.delete(meeting_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Meeting not found.") from exc
+    delete_temp_file(meeting.audio_path)
+    return Response(status_code=204)
+
+
 @app.patch("/api/meetings/{meeting_id}/speakers", response_model=MeetingStatusResponse)
 async def update_speakers(meeting_id: str, update: SpeakerUpdate) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
