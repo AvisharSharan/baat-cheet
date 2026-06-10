@@ -9,7 +9,6 @@ let liveSocket = null;
 let liveAudioNodes = [];
 let liveTranscript = [];
 let recordingUrl = null;
-let cleanupGlow = null;
 let recTimerInterval = null;
 let recStartTime = null;
 const liveSampleRate = 16000;
@@ -378,10 +377,16 @@ function renderState(data) {
   if (data.name) meetingName.value = data.name;
   setStatus(statusLabel(data));
   const finalTranscript = data.transcript || [];
+  const isTranscribing = data.status === "uploaded" || data.status === "transcribing";
+  const transcriptForDisplay = finalTranscript.length ? finalTranscript : (isTranscribing ? liveTranscript : []);
   if (finalTranscript.length > 0) liveTranscript = [];
   renderTranscript(
-    finalTranscript,
-    data.speaker_names || {},
+    transcriptForDisplay,
+    finalTranscript.length ? (data.speaker_names || {}) : { Live: "Live" },
+    {
+      processing: isTranscribing,
+      skipSpeakerEditor: !finalTranscript.length && transcriptForDisplay.length > 0,
+    },
   );
   if (data.mom_markdown) {
     setMomGenerating(false);
@@ -507,16 +512,20 @@ function updateControls(data, finalTranscript) {
 }
 
 function renderTranscript(transcript, speakerNames, options = {}) {
-  if (!options.cleanupOverlay) destroyCleanupGlow();
   if (!transcript.length) {
     transcriptEl.className = "transcript transcript-empty";
-    transcriptEl.innerHTML = `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/><path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
+    transcriptEl.innerHTML = options.processing
+      ? aiProcessingBlock("Final transcription running", "Keeping captions here while the local diarized transcript is prepared.")
+      : `<div class="empty-state"><div class="empty-glyph"><svg width="40" height="40" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/><path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/></svg></div><strong>No transcript yet</strong><span>${escapeHtml(emptyTranscriptMessage())}</span></div>`;
     speakerEditor.innerHTML = "";
     speakerFooter.hidden = true;
     rememberVoices.checked = false;
     rememberVoices.disabled = true;
     updateMetrics([]);
-    if (transcriptBadge) transcriptBadge.hidden = true;
+    if (transcriptBadge) {
+      transcriptBadge.textContent = options.processing ? "Processing" : "";
+      transcriptBadge.hidden = !options.processing;
+    }
     return;
   }
 
@@ -532,19 +541,18 @@ function renderTranscript(transcript, speakerNames, options = {}) {
 
   // Show badge with turn count
   if (transcriptBadge) {
-    transcriptBadge.textContent = `${transcript.length} turns`;
+    transcriptBadge.textContent = options.processing ? "Finalizing" : `${transcript.length} turns`;
     transcriptBadge.hidden = false;
   }
 
   transcriptEl.className = "transcript";
-  const cleanupOverlay = options.cleanupOverlay
-    ? '<div class="cleanup-overlay" aria-live="polite"><div class="cleanup-dots"></div><div class="cleanup-glow"></div><div class="cleanup-text">Finalizing locally</div></div>'
+  const processingBanner = options.processing
+    ? aiProcessingBanner("Final transcription running", "Live captions stay visible until the diarized transcript is ready.")
     : "";
-  transcriptEl.innerHTML = cleanupOverlay + transcript.map((turn) => {
+  transcriptEl.innerHTML = processingBanner + transcript.map((turn) => {
     const label = speakerNames[turn.speaker] || turn.speaker;
     return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
   }).join("");
-  if (options.cleanupOverlay) mountCleanupGlow();
 }
 
 function updateMetrics(transcript) {
@@ -593,7 +601,7 @@ function setMomGenerating(active) {
     if (!panelMinutes.querySelector(".mom-generating-label")) {
       const label = document.createElement("div");
       label.className = "mom-generating-label";
-      label.innerHTML = '<div class="mom-generating-dots"><span></span><span></span><span></span></div>Drafting Minutes';
+      label.innerHTML = aiProcessingInline("Drafting minutes", "Structuring decisions, actions, and open questions.");
       panelMinutes.appendChild(label);
     }
   } else {
@@ -628,7 +636,6 @@ function statusLabel(data) {
 function resetSessionOutput() {
   meetingId = null;
   liveTranscript = [];
-  destroyCleanupGlow();
   setMomGenerating(false);
   if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
   clearRecordingPlayback();
@@ -704,21 +711,17 @@ function setUploadBusy(busy) {
 }
 
 // ─── CLEANUP GLOW ─────────────────────────────────────────────
-function mountCleanupGlow() {
-  if (cleanupGlow) return;
-  const target = transcriptEl.querySelector(".cleanup-dots");
-  if (!target || !window.DottedGlowBackground) return;
-  cleanupGlow = new window.DottedGlowBackground(target, {
-    gap: 13, radius: 1.7,
-    color: "rgba(200,164,74,0.6)", glowColor: "rgba(200,164,74,0.88)",
-    opacity: 0.75, speedMin: 0.34, speedMax: 1.2, speedScale: 0.9,
-  });
+function aiProcessingBanner(title, detail) {
+  return `<div class="ai-processing-banner" aria-live="polite">${aiProcessingInline(title, detail)}</div>`;
 }
 
-function destroyCleanupGlow() {
-  if (!cleanupGlow) return;
-  cleanupGlow.destroy();
-  cleanupGlow = null;
+function aiProcessingBlock(title, detail) {
+  return `<div class="ai-processing-block" aria-live="polite">${aiProcessingInline(title, detail)}</div>`;
+}
+
+function aiProcessingInline(title, detail) {
+  return `<div class="ai-core" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="ai-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></div>`;
 }
 
 // ─── AUDIO UTILS ──────────────────────────────────────────────
