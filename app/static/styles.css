@@ -1,80 +1,84 @@
 /* ═══════════════════════════════════════════════
-   TOKENS
+   TOKENS (One UI / GalaxyOS Vibe)
 ═══════════════════════════════════════════════ */
 :root {
-  /* Dark theme (default) */
-  --bg:        #0c0d0c;
-  --bg-2:      #111311;
-  --bg-3:      #161918;
-  --bg-4:      #1c201e;
-  --bg-5:      #222724;
-  --border:    #222522;
-  --border-2:  #2b302d;
-  --border-3:  #363d39;
-  --text:      #e6ece7;
-  --text-2:    #8fa496;
-  --text-3:    #566059;
-  --text-4:    #3a4040;
+  /* Dark theme (AMOLED & Deep Grays) */
+  --bg:        #000000;
+  --bg-2:      #0f0f0f;
+  --bg-3:      #1a1a1a;
+  --bg-4:      #262626;
+  --bg-5:      #333333;
+  --border:    #2a2a2a;
+  --border-2:  #3b3b3b;
+  --border-3:  #4d4d4d;
+  --text:      #f5f5f5;
+  --text-2:    #b3b3b3;
+  --text-3:    #808080;
+  --text-4:    #595959;
 
-  --gold:      #c8a44a;
-  --gold-2:    #ddb96a;
-  --gold-3:    #f0d090;
-  --gold-dim:  rgba(200,164,74,0.10);
-  --gold-glow: rgba(200,164,74,0.18);
+  /* Primary Accent: Vibrant Galaxy Blue (Mapped to your --gold vars for easy replacement) */
+  --gold:      #3E91FF;
+  --gold-2:    #67a9ff;
+  --gold-3:    #a1cbff;
+  --gold-dim:  rgba(62, 145, 255, 0.12);
+  --gold-glow: rgba(62, 145, 255, 0.25);
 
-  --green:     #3fa86e;
-  --green-2:   #5bbf85;
-  --green-dim: rgba(63,168,110,0.10);
+  /* Semantic Colors */
+  --green:     #23C552;
+  --green-2:   #4ade80;
+  --green-dim: rgba(35, 197, 82, 0.12);
 
-  --red:       #c95a47;
-  --red-2:     #e06b57;
-  --red-dim:   rgba(201,90,71,0.10);
+  --red:       #FF4747;
+  --red-2:     #ff7676;
+  --red-dim:   rgba(255, 71, 71, 0.12);
 
-  --blue:      #5a8fc9;
-  --blue-dim:  rgba(90,143,201,0.10);
+  --blue:      #3E91FF;
+  --blue-dim:  rgba(62, 145, 255, 0.12);
 
-  --r:         9px;
-  --r-sm:      6px;
-  --r-lg:      14px;
+  --r:         12px;
+  --r-sm:      8px;
+  --r-lg:      20px;
 
   --font-sans: 'Syne', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Literata', Georgia, serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  --shadow:    0 4px 12px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-sm: 0 2px 6px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow:    0 8px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
 }
 
 html[data-theme="light"] {
-  --bg:        #f2f5f0;
-  --bg-2:      #fafcf9;
-  --bg-3:      #ecf0e9;
-  --bg-4:      #e3e9e0;
-  --bg-5:      #d8e0d5;
-  --border:    #d0d9cc;
-  --border-2:  #bfcabb;
-  --border-3:  #aebaa9;
-  --text:      #0f1a12;
-  --text-2:    #3d5244;
-  --text-3:    #627a6a;
-  --text-4:    #8fa497;
+  /* Light theme (Crisp and airy) */
+  --bg:        #f0f2f5;
+  --bg-2:      #ffffff;
+  --bg-3:      #f7f8fa;
+  --bg-4:      #ebeef2;
+  --bg-5:      #dfe3e8;
+  --border:    #d9dce1;
+  --border-2:  #c3c8cf;
+  --border-3:  #aeb4bc;
+  --text:      #121212;
+  --text-2:    #4a4a4a;
+  --text-3:    #737373;
+  --text-4:    #999999;
 
-  --gold:      #8a6618;
-  --gold-2:    #a37c20;
-  --gold-3:    #c09630;
-  --gold-dim:  rgba(138,102,24,0.09);
-  --gold-glow: rgba(138,102,24,0.14);
+  /* Primary Accent: Deep System Blue */
+  --gold:      #005BFF;
+  --gold-2:    #0047cc;
+  --gold-3:    #003399;
+  --gold-dim:  rgba(0, 91, 255, 0.1);
+  --gold-glow: rgba(0, 91, 255, 0.2);
 
-  --green:     #1a6e44;
-  --green-2:   #257a4e;
-  --green-dim: rgba(26,110,68,0.09);
+  --green:     #1A9E3F;
+  --green-2:   #147d32;
+  --green-dim: rgba(26, 158, 63, 0.1);
 
-  --red:       #a63827;
-  --red-2:     #c0442f;
-  --red-dim:   rgba(166,56,39,0.09);
+  --red:       #E02424;
+  --red-2:     #b01c1c;
+  --red-dim:   rgba(224, 36, 36, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
-  --shadow:    0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-sm: 0 2px 6px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+  --shadow:    0 8px 24px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.03);
 }
 
 /* ═══════════════════════════════════════════════
