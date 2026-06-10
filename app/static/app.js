@@ -33,6 +33,7 @@ const speakerCount       = document.querySelector("#speakerCount");
 const startBtn           = document.querySelector("#startBtn");
 const stopBtn            = document.querySelector("#stopBtn");
 const momBtn             = document.querySelector("#momBtn");
+const cancelActionBtn    = document.querySelector("#cancelActionBtn");
 const saveSpeakersBtn    = document.querySelector("#saveSpeakersBtn");
 const statusText         = document.querySelector("#statusText");
 const transcriptEl       = document.querySelector("#transcript");
@@ -81,6 +82,7 @@ startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
 uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
 momBtn.addEventListener("click", generateMom);
+cancelActionBtn.addEventListener("click", cancelActiveAction);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 themeToggle.addEventListener("click", toggleTheme);
 newMeetingBtn.addEventListener("click", startNewMeeting);
@@ -370,7 +372,7 @@ async function pollStatus() {
   const response = await apiFetch(`/api/meetings/${meetingId}/status`);
   const data = await response.json();
   renderState(data);
-  if (["transcribed", "ready", "failed"].includes(data.status) && pollTimer) {
+  if (["transcribed", "ready", "failed", "canceled"].includes(data.status) && pollTimer) {
     window.clearInterval(pollTimer);
     pollTimer = null;
     loadHistory();
@@ -517,6 +519,8 @@ function updateControls(data, finalTranscript) {
   const speakerLabelsEnabled = data.speaker_labels_enabled !== false;
   setUploadBusy(busy);
   momBtn.disabled = !finalTranscript.length || data.status === "generating";
+  cancelActionBtn.hidden = !busy;
+  cancelActionBtn.disabled = !busy;
   saveSpeakersBtn.disabled = !speakerLabelsEnabled || !finalTranscript.length;
   rememberVoices.disabled = !speakerLabelsEnabled || !finalTranscript.length || !data.voiceprints_ready;
   rememberVoices.title = voiceprintHint(data);
@@ -627,7 +631,32 @@ async function generateMom() {
   momBtn.disabled = true;
   setMomGenerating(true);
   const response = await apiFetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
+  if (!response.ok) {
+    setStatus("Could not start minutes generation");
+    setMomGenerating(false);
+    return;
+  }
   renderState(await response.json());
+  pollStatus();
+  if (!pollTimer) pollTimer = window.setInterval(pollStatus, 2500);
+}
+
+async function cancelActiveAction() {
+  if (!meetingId) return;
+  cancelActionBtn.disabled = true;
+  setStatus("Canceling current action…");
+  const response = await apiFetch(`/api/meetings/${meetingId}/cancel`, { method: "POST" });
+  if (!response.ok) {
+    setStatus("Could not cancel current action");
+    cancelActionBtn.disabled = false;
+    return;
+  }
+  if (pollTimer) {
+    window.clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  renderState(await response.json());
+  loadHistory();
 }
 
 function setMomGenerating(active) {
@@ -659,6 +688,7 @@ function statusLabel(data) {
   if (data.status === "transcribed") return "Transcript ready";
   if (data.status === "generating") return "Drafting minutes";
   if (data.status === "ready") return "Minutes ready";
+  if (data.status === "canceled") return "Canceled";
   return data.status;
 }
 
@@ -672,6 +702,8 @@ function resetSessionOutput() {
   exportLinks.innerHTML = "";
   momOutput.className = "mom mom-empty";
   momOutput.textContent = "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";
+  cancelActionBtn.hidden = true;
+  cancelActionBtn.disabled = true;
   renderTranscript([], {});
   updateWorkflowUI();
 }

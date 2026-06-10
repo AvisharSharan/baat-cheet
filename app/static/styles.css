@@ -864,6 +864,19 @@ body[data-state="recording"] .record-dot {
   box-shadow: 0 0 16px rgba(201,90,71,0.15);
 }
 
+.btn-cancel {
+  background: var(--red-dim);
+  color: var(--red-2);
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.btn-cancel:not(:disabled):hover {
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  border-color: var(--red);
+  box-shadow: 0 0 16px rgba(255, 71, 71, 0.16);
+}
+
+.btn-cancel[hidden] { display: none; }
+
 .btn-upload {
   background: transparent;
   color: var(--gold);

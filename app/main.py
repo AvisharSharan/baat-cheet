@@ -7,10 +7,11 @@ import tempfile
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Coroutine
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -27,6 +28,7 @@ load_dotenv()
 app = FastAPI(title="Minutes-of-Meeting Tool")
 store = MeetingStore()
 logger = logging.getLogger(__name__)
+running_tasks: dict[str, asyncio.Task[None]] = {}
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -113,7 +115,6 @@ async def live_transcribe(websocket: WebSocket) -> None:
 
 @app.post("/api/meetings/audio", response_model=MeetingCreateResponse)
 async def upload_audio(
-    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     num_speakers: int | None = Form(default=None),
     speaker_labels_enabled: bool = Form(default=True),
@@ -139,7 +140,7 @@ async def upload_audio(
         speaker_labels_enabled=speaker_labels_enabled,
     )
     store.add(meeting)
-    background_tasks.add_task(transcribe_meeting, meeting_id)
+    _start_meeting_task(meeting_id, transcribe_meeting(meeting_id))
     return MeetingCreateResponse(id=meeting.id, name=meeting.name, status=meeting.status)
 
 
@@ -156,6 +157,7 @@ async def get_status(meeting_id: str, _: CurrentUser = Depends(current_user)) ->
 
 @app.delete("/api/meetings/{meeting_id}", status_code=204)
 async def delete_meeting(meeting_id: str, _: CurrentUser = Depends(current_user)) -> Response:
+    _cancel_running_task(meeting_id)
     try:
         meeting = store.delete(meeting_id)
     except KeyError as exc:
@@ -196,7 +198,30 @@ async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) 
         raise HTTPException(status_code=409, detail="Transcription must be complete before generating MoM.")
 
     meeting.status = MeetingStatus.GENERATING
+    meeting.error = None
     store.update(meeting)
+    _start_meeting_task(meeting_id, generate_mom_for_meeting(meeting_id))
+    return MeetingStatusResponse.from_state(meeting)
+
+
+@app.post("/api/meetings/{meeting_id}/cancel", response_model=MeetingStatusResponse)
+async def cancel_meeting_action(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
+    meeting = _get_meeting(meeting_id)
+    if meeting.status not in {MeetingStatus.UPLOADED, MeetingStatus.TRANSCRIBING, MeetingStatus.GENERATING}:
+        raise HTTPException(status_code=409, detail="No active transcription or MoM generation to cancel.")
+
+    _cancel_running_task(meeting_id)
+    delete_temp_file(meeting.audio_path)
+    meeting.audio_path = None
+    meeting.status = MeetingStatus.CANCELED
+    meeting.completed_at = datetime.now(timezone.utc)
+    meeting.error = "Canceled by user."
+    store.update(meeting)
+    return MeetingStatusResponse.from_state(meeting)
+
+
+async def generate_mom_for_meeting(meeting_id: str) -> None:
+    meeting = store.get(meeting_id)
     try:
         meeting.mom_markdown = await MomGenerationClient().generate(
             meeting.transcript,
@@ -206,12 +231,18 @@ async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) 
         meeting.status = MeetingStatus.READY
         meeting.completed_at = meeting.completed_at or datetime.now(timezone.utc)
         meeting.error = None
+    except asyncio.CancelledError:
+        meeting.status = MeetingStatus.CANCELED
+        meeting.completed_at = datetime.now(timezone.utc)
+        meeting.error = "Canceled by user."
+        raise
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.completed_at = datetime.now(timezone.utc)
         meeting.error = str(exc)
-    store.update(meeting)
-    return MeetingStatusResponse.from_state(meeting)
+    finally:
+        _finish_meeting_task(meeting_id)
+        _safe_update_meeting(meeting)
 
 
 @app.get("/api/meetings/{meeting_id}/export.md")
@@ -300,6 +331,11 @@ async def transcribe_meeting(meeting_id: str) -> None:
             meeting.speaker_names = {speaker: speaker for speaker in speakers}
             meeting.voiceprint_status = "failed"
             meeting.voiceprint_error = "Voiceprinting failed. Check the server log for details."
+    except asyncio.CancelledError:
+        meeting.status = MeetingStatus.CANCELED
+        meeting.completed_at = datetime.now(timezone.utc)
+        meeting.error = "Canceled by user."
+        raise
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.completed_at = datetime.now(timezone.utc)
@@ -307,7 +343,43 @@ async def transcribe_meeting(meeting_id: str) -> None:
     finally:
         delete_temp_file(meeting.audio_path)
         meeting.audio_path = None
+        _finish_meeting_task(meeting_id)
+        _safe_update_meeting(meeting)
+
+
+def _start_meeting_task(meeting_id: str, coro: Coroutine[Any, Any, None]) -> None:
+    _cancel_running_task(meeting_id)
+    task = asyncio.create_task(coro)
+    task.add_done_callback(_consume_task_result)
+    running_tasks[meeting_id] = task
+
+
+def _cancel_running_task(meeting_id: str) -> None:
+    task = running_tasks.pop(meeting_id, None)
+    if task and not task.done():
+        task.cancel()
+
+
+def _finish_meeting_task(meeting_id: str) -> None:
+    task = running_tasks.get(meeting_id)
+    if task is asyncio.current_task():
+        running_tasks.pop(meeting_id, None)
+
+
+def _safe_update_meeting(meeting: MeetingState) -> None:
+    try:
         store.update(meeting)
+    except KeyError:
+        logger.info("Meeting %s disappeared before background task completed.", meeting.id)
+
+
+def _consume_task_result(task: asyncio.Task[None]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.warning("Background meeting task failed unexpectedly.", exc_info=True)
 
 
 def _get_meeting(meeting_id: str) -> MeetingState:

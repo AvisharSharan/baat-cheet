@@ -13,6 +13,7 @@ class MeetingStatus(str, Enum):
     TRANSCRIBED = "transcribed"
     GENERATING = "generating"
     READY = "ready"
+    CANCELED = "canceled"
     FAILED = "failed"
 
 
