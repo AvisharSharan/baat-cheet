@@ -12,7 +12,6 @@ let recordingUrl = null;
 let recTimerInterval = null;
 let recStartTime = null;
 let isFinalizingRecording = false;
-let pendingAutoMom = false;
 const liveSampleRate = 16000;
 const authTokenKey = "momAuthToken";
 let authToken = localStorage.getItem(authTokenKey) || "";
@@ -224,7 +223,7 @@ async function startRecording() {
       } finally {
         stopActiveCapture();
         renderRecordingPlayback();
-        await uploadRecording({ autoMom: true });
+        await uploadRecording();
         isFinalizingRecording = false;
       }
     };
@@ -348,22 +347,22 @@ async function stopLiveTranscription(options = {}) {
   if (waitForFinalChunk) await closed;
 }
 
-async function uploadRecording(options = {}) {
+async function uploadRecording() {
   const mimeType = recorder && recorder.mimeType ? recorder.mimeType : "audio/webm";
   const blob = new Blob(chunks, { type: mimeType });
   updateWorkflowUI();
   if (!blob.size) { setStatus("No audio was recorded"); startBtn.disabled = false; return; }
-  await uploadMeetingFile(blob, recordingFilename(mimeType), options);
+  await uploadMeetingFile(blob, recordingFilename(mimeType));
 }
 
 async function uploadRecordedFile() {
   const file = recordedFile.files[0];
   if (!file) { setStatus("Choose a recorded audio or video file"); return; }
   resetSessionOutput();
-  await uploadMeetingFile(file, file.name || "recorded-meeting", { autoMom: true });
+  await uploadMeetingFile(file, file.name || "recorded-meeting");
 }
 
-async function uploadMeetingFile(file, filename, options = {}) {
+async function uploadMeetingFile(file, filename) {
   const form = new FormData();
   form.append("audio", file, filename);
   const expectedSpeakers = Number(speakerCount.value);
@@ -381,7 +380,6 @@ async function uploadMeetingFile(file, filename, options = {}) {
 
   const data = await response.json();
   meetingId = data.id;
-  pendingAutoMom = Boolean(options.autoMom);
   meetingName.value = data.name || meetingName.value;
   setStatus("Transcribing locally…");
   showMeeting();
@@ -395,14 +393,8 @@ async function pollStatus() {
   const response = await apiFetch(`/api/meetings/${meetingId}/status`);
   const data = await response.json();
   renderState(data);
-  if (data.status === "transcribed" && pendingAutoMom && data.voiceprint_status !== "processing") {
-    pendingAutoMom = false;
-    await generateMom({ skipSaveSpeakers: true });
-    return;
-  }
-  if (["ready", "failed", "canceled"].includes(data.status)) pendingAutoMom = false;
-  const waitingForVoiceprints = data.status === "transcribed" && pendingAutoMom && data.voiceprint_status === "processing";
-  if (["transcribed", "ready", "failed", "canceled"].includes(data.status) && pollTimer && !waitingForVoiceprints) {
+  const voiceprintsStillRunning = data.status === "transcribed" && ["pending", "processing"].includes(data.voiceprint_status);
+  if (["transcribed", "ready", "failed", "canceled"].includes(data.status) && pollTimer && !voiceprintsStillRunning) {
     window.clearInterval(pollTimer);
     pollTimer = null;
     loadHistory();
@@ -548,12 +540,13 @@ function showMeeting() {
 function updateControls(data, finalTranscript) {
   const busy = data.status === "transcribing" || data.status === "generating";
   const speakerLabelsEnabled = data.speaker_labels_enabled !== false;
+  const voiceprintsReady = data.voiceprints_ready || data.voiceprint_status === "ready";
   setUploadBusy(busy);
   momBtn.disabled = !finalTranscript.length || data.status === "generating";
   cancelActionBtn.hidden = !busy;
   cancelActionBtn.disabled = !busy;
   saveSpeakersBtn.disabled = !speakerLabelsEnabled || !finalTranscript.length;
-  rememberVoices.disabled = !speakerLabelsEnabled || !finalTranscript.length || !data.voiceprints_ready;
+  rememberVoices.disabled = !speakerLabelsEnabled || !finalTranscript.length || !voiceprintsReady;
   rememberVoices.title = voiceprintHint(data);
 }
 
@@ -592,7 +585,8 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   }
 
   // Key changes only when new turns arrive or the last turn's text updates
-  const contentKey = `${options.noSpeakerLabels ? "plain" : "labels"}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
+  const speakerNameKey = JSON.stringify(speakerNames || {});
+  const contentKey = `${options.noSpeakerLabels ? "plain" : "labels"}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
   updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels });
@@ -634,7 +628,7 @@ function updateMetrics(transcript, options = {}) {
 }
 
 function voiceprintHint(data) {
-  if (data.voiceprints_ready) return "Store local voice profiles for these labels";
+  if (data.voiceprints_ready || data.voiceprint_status === "ready") return "Store local voice profiles for these labels";
   if (data.voiceprint_error) return data.voiceprint_error;
   if (data.voiceprint_status === "processing") return "Voiceprints are being prepared";
   if (data.voiceprint_status === "pending") return "Voiceprints become available after final transcription";
@@ -716,6 +710,7 @@ function statusLabel(data) {
   if (data.error) return `${data.status}: ${data.error}`;
   if (data.status === "uploaded") return "Uploaded";
   if (data.status === "transcribing") return "Transcribing locally";
+  if (data.status === "transcribed" && data.voiceprint_status === "processing") return "Matching saved speaker profiles";
   if (data.status === "transcribed") return "Transcript ready";
   if (data.status === "generating") return "Drafting minutes";
   if (data.status === "ready") return "Minutes ready";
@@ -727,7 +722,6 @@ function resetSessionOutput() {
   meetingId = null;
   liveTranscript = [];
   isFinalizingRecording = false;
-  pendingAutoMom = false;
   _lastTranscriptKey = null;
   setMomGenerating(false);
   if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
