@@ -1605,7 +1605,9 @@ h2 {
    HISTORY
 ═══════════════════════════════════════════════ */
 .panel-history {
-  height: auto;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 180px);
   min-height: 500px;
   max-height: calc(100vh - 180px);
   overflow: hidden;
@@ -1779,7 +1781,7 @@ h2 {
     min-height: 460px;
   }
   .panel-history {
-    height: auto;
+    height: 80vh;
     max-height: 80vh;
   }
 }
