@@ -21,6 +21,7 @@ from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
 from .services.transcription import create_transcription_client, transcribe_live_preview
+from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
 
 load_dotenv()
@@ -59,10 +60,13 @@ async def live_transcribe(websocket: WebSocket) -> None:
     await websocket_user(websocket)
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
-    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "2"))
-    bytes_per_chunk = sample_rate * 2 * max(2, chunk_seconds)
+    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "1"))
+    bytes_per_chunk = sample_rate * 2 * max(1, chunk_seconds)
     pcm_buffer = bytearray()
     sequence = 0
+    # Tracks the last emitted text per speaker so overlapping Whisper chunks
+    # don't repeat words that were already sent to the client.
+    last_text: dict[str, str] = {}
     await websocket.send_json({"type": "state", "message": "Local captions connected"})
 
     async def _flush() -> None:
@@ -75,11 +79,17 @@ async def live_transcribe(websocket: WebSocket) -> None:
         try:
             await websocket.send_json({"type": "state", "message": "Processing local caption chunk"})
             turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
-            if turns:
+            novel_turns = []
+            for turn in (turns or []):
+                suffix = new_suffix(last_text.get(turn.speaker, ""), turn.text)
+                if suffix:
+                    last_text[turn.speaker] = turn.text
+                    novel_turns.append(turn.model_copy(update={"text": suffix}))
+            if novel_turns:
                 await websocket.send_json(
                     {
                         "type": "transcript",
-                        "turns": [turn.model_dump(mode="json") for turn in turns],
+                        "turns": [turn.model_dump(mode="json") for turn in novel_turns],
                     }
                 )
             else:

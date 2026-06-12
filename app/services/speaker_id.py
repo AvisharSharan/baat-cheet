@@ -219,6 +219,11 @@ class _EmbeddingBackend:
             cls._instance = cls()
         return cls._instance
 
+    @classmethod
+    def reset(cls) -> None:
+        """Release the cached model instance (e.g. during hot-reload in development)."""
+        cls._instance = None
+
     def __init__(self) -> None:
         try:
             import torch
@@ -355,9 +360,16 @@ def _normalize_vector(vector: List[float]) -> List[float]:
 
 
 def _cosine_similarity(left: List[float], right: List[float]) -> float:
+    """Dot product of two pre-normalized unit vectors equals cosine similarity.
+
+    All embeddings are normalized before being stored (via _normalize_vector in
+    embed() and upsert_many()), so calling _normalize_vector again here is
+    redundant work on every profile comparison.  A plain dot product is correct
+    and faster.
+    """
     if not left or not right or len(left) != len(right):
         return -1.0
-    return sum(a * b for a, b in zip(_normalize_vector(left), _normalize_vector(right)))
+    return sum(a * b for a, b in zip(left, right))
 
 
 def _env_float(name: str, default: float) -> float:

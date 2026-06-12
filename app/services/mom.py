@@ -83,7 +83,7 @@ class MomGenerationClient:
         if self.provider == "ollama":
             options = {
                 "temperature": 0.1,
-                "num_ctx": _env_int("OLLAMA_NUM_CTX", 8192),
+                "num_ctx": _env_int("OLLAMA_NUM_CTX", 32768),
                 "num_predict": self.max_tokens,
                 "num_gpu": _env_int("OLLAMA_NUM_GPU", 0),
             }
@@ -139,6 +139,22 @@ def build_mom_prompt(
             lines.append(turn.text)
 
     transcript_text = "\n".join(lines)
+
+    # Warn when the transcript is likely to overflow the configured context window.
+    # Rough heuristic: ~3.5 characters per token for English text.
+    import logging as _logging
+    _logger = _logging.getLogger(__name__)
+    num_ctx = _env_int("OLLAMA_NUM_CTX", 32768)
+    estimated_tokens = len(transcript_text) / 3.5
+    if estimated_tokens > num_ctx * 0.85:
+        _logger.warning(
+            "Transcript is ~%d estimated tokens but OLLAMA_NUM_CTX=%d. "
+            "The model may silently truncate the input and produce an incomplete MoM. "
+            "Increase OLLAMA_NUM_CTX or use a larger-context model.",
+            int(estimated_tokens),
+            num_ctx,
+        )
+
     transcript_context = (
         "The transcript below has already been sorted chronologically and speaker labels have been "
         "resolved to full names. Diarization may contain short overlapping fragments or incomplete "
@@ -178,55 +194,6 @@ bullet "- Not stated" under it.
 | # | Action | Owner | Due Date | Notes |
 |---|--------|-------|----------|-------|
 <One row per action item. Owner and Due Date are "Not stated" if not explicit. Notes column captures source context in 10 words or fewer.>
-
-## Risks and Blockers
-<Bullet list of concerns, blockers, or risks explicitly flagged by speakers.>
-
-## Open Questions
-<Bullet list of questions that were raised but not resolved in the meeting.>
-
-## Next Meeting
-<Date, time, and agenda topics if stated. Otherwise a single bullet "- Not stated".>
-
----
-
-Transcript:
-{transcript_text}
-"""
-    return f"""\
-The transcript below has already been sorted chronologically and speaker labels have been \
-resolved to full names. Diarization may contain short overlapping fragments or incomplete \
-sentences — treat these as part of the surrounding context, not as separate statements.
-
-Generate a Minutes of Meeting document using exactly the Markdown structure below. \
-Emit every heading even if a section has no content; in that case write a single \
-bullet "- Not stated" under it.
-
----
-
-# Minutes of Meeting
-
-## Meeting Details
-- Date: <date or "Not stated">
-- Time: <time or "Not stated">
-- Facilitator: <name or "Not stated">
-- Attendees: <comma-separated list of every speaker name that appears in the transcript>
-
-## Objective
-<One sentence stating the meeting's stated purpose. If no purpose was stated, write "Not stated.">
-
-## Key Discussion Points
-<Bullet list of topics discussed. One sentence per bullet. Chronological order.>
-
-## Decisions
-<Numbered list. Each item is one explicit, unambiguous decision reached during the meeting. \
-Only include decisions — not proposals, suggestions, or open topics.>
-
-## Action Items
-| # | Action | Owner | Due Date | Notes |
-|---|--------|-------|----------|-------|
-<One row per action item. Owner and Due Date are "Not stated" if not explicit. \
-Notes column captures source context in 10 words or fewer.>
 
 ## Risks and Blockers
 <Bullet list of concerns, blockers, or risks explicitly flagged by speakers.>

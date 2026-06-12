@@ -54,7 +54,7 @@ class FasterWhisperPyannoteTranscriptionClient:
         self.whisper_model = whisper_model or os.getenv("FASTER_WHISPER_MODEL", "base")
         self.whisper_device = whisper_device or os.getenv("FASTER_WHISPER_DEVICE", "cpu")
         self.whisper_compute_type = whisper_compute_type or os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8")
-        self.pyannote_model = pyannote_model or os.getenv("PYANNOTE_DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1")
+        self.pyannote_model = pyannote_model or os.getenv("PYANNOTE_DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
         self.hf_token = hf_token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
 
     async def transcribe(
