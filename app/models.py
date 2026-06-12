@@ -49,6 +49,11 @@ class SpeakerUpdate(BaseModel):
     remember_voices: bool = False
 
 
+class TranscriptUpdate(BaseModel):
+    index: int
+    text: str
+
+
 class MeetingCreateResponse(BaseModel):
     id: str
     name: str

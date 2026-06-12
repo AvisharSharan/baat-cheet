@@ -12,6 +12,7 @@ let recordingUrl = null;
 let recTimerInterval = null;
 let recStartTime = null;
 let isFinalizingRecording = false;
+let editingTranscriptIndex = null;
 const liveSampleRate = 16000;
 const authTokenKey = "momAuthToken";
 let authToken = localStorage.getItem(authTokenKey) || "";
@@ -419,6 +420,7 @@ function renderState(data) {
       skipSpeakerEditor: !speakerLabelsEnabled || (!finalTranscript.length && transcriptForDisplay.length > 0),
       noSpeakerLabels: !speakerLabelsEnabled && finalTranscript.length > 0,
       follow: isTranscribing || !finalTranscript.length,
+      editable: finalTranscript.length > 0 && !isTranscribing,
     },
   );
   if (data.mom_markdown) {
@@ -609,14 +611,81 @@ function renderTranscript(transcript, speakerNames, options = {}) {
 
   const shouldFollowTranscript = options.follow || isTranscriptNearBottom();
   transcriptEl.className = options.noSpeakerLabels ? "transcript transcript-plain" : "transcript";
-  transcriptEl.innerHTML = transcript.map((turn) => {
+  transcriptEl.innerHTML = transcript.map((turn, index) => {
     if (options.noSpeakerLabels) {
-      return `<div class="turn"><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
+      return renderTurnHtml(turn, index, "", options);
     }
     const label = speakerNames[turn.speaker] || turn.speaker;
-    return `<div class="turn"><span class="speaker">${escapeHtml(label)}</span><div class="turn-text">${escapeHtml(turn.text)}</div></div>`;
+    return renderTurnHtml(turn, index, label, options);
   }).join("");
+  bindTranscriptEditControls();
   if (shouldFollowTranscript) scrollTranscriptToBottom();
+}
+
+function renderTurnHtml(turn, index, label, options = {}) {
+  const editing = editingTranscriptIndex === index;
+  const speaker = label ? `<span class="speaker">${escapeHtml(label)}</span>` : "";
+  const editButton = options.editable
+    ? `<button class="turn-edit-btn" type="button" data-index="${index}" title="Edit transcript" aria-label="Edit transcript turn">
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m13.5 6.5 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>`
+    : "";
+  const body = editing
+    ? `<div class="turn-editor">
+        <textarea class="turn-editor-input" data-index="${index}">${escapeHtml(turn.text)}</textarea>
+        <div class="turn-editor-actions">
+          <button class="btn btn-primary btn-sm turn-save-btn" type="button" data-index="${index}">Save</button>
+          <button class="btn btn-ghost btn-sm turn-cancel-btn" type="button">Cancel</button>
+        </div>
+      </div>`
+    : `<div class="turn-text">${escapeHtml(turn.text)}</div>`;
+  return `<div class="turn" data-index="${index}">
+    <div class="turn-main">
+      <div class="turn-content">${speaker}${body}</div>
+      ${editButton}
+    </div>
+  </div>`;
+}
+
+function bindTranscriptEditControls() {
+  transcriptEl.querySelectorAll(".turn-edit-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      editingTranscriptIndex = Number(button.dataset.index);
+      _lastTranscriptKey = null;
+      pollStatus();
+    });
+  });
+  transcriptEl.querySelectorAll(".turn-cancel-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      editingTranscriptIndex = null;
+      _lastTranscriptKey = null;
+      pollStatus();
+    });
+  });
+  transcriptEl.querySelectorAll(".turn-save-btn").forEach((button) => {
+    button.addEventListener("click", () => saveTranscriptTurn(Number(button.dataset.index)));
+  });
+}
+
+async function saveTranscriptTurn(index) {
+  if (!meetingId || !Number.isInteger(index)) return;
+  const input = transcriptEl.querySelector(`.turn-editor-input[data-index="${index}"]`);
+  const text = input ? input.value.trim() : "";
+  if (!text) { setStatus("Transcript text cannot be blank"); return; }
+  setStatus("Saving transcript edit...");
+  const response = await apiFetch(`/api/meetings/${meetingId}/transcript`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ index, text }),
+  });
+  if (!response.ok) {
+    setStatus("Could not save transcript edit");
+    return;
+  }
+  editingTranscriptIndex = null;
+  _lastTranscriptKey = null;
+  renderState(await response.json());
+  loadHistory();
 }
 
 function updateMetrics(transcript, options = {}) {

@@ -1373,6 +1373,72 @@ h2 {
 
 .turn:last-child { border-bottom: none; }
 
+.turn-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 10px;
+  align-items: start;
+}
+
+.turn-content {
+  min-width: 0;
+}
+
+.turn-edit-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.turn:hover .turn-edit-btn,
+.turn-edit-btn:focus-visible {
+  opacity: 1;
+}
+
+.turn-edit-btn:hover {
+  border-color: var(--border-2);
+  background: var(--bg-4);
+  color: var(--gold);
+}
+
+.turn-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.turn-editor-input {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  background: var(--bg-2);
+  color: var(--text);
+  padding: 10px 12px;
+  font: 400 14px/1.65 var(--font-body);
+}
+
+.turn-editor-input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-dim);
+}
+
+.turn-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @keyframes turnIn {
   from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: translateY(0); }

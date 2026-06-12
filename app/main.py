@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
-from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate
+from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate, TranscriptUpdate
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
@@ -198,6 +198,26 @@ async def update_speakers(
         except Exception:
             logger.warning("Could not persist voice profiles.", exc_info=True)
             meeting.voiceprint_error = "Could not persist voice profiles. Check the server log for details."
+    store.update(meeting)
+    return MeetingStatusResponse.from_state(meeting)
+
+
+@app.patch("/api/meetings/{meeting_id}/transcript", response_model=MeetingStatusResponse)
+async def update_transcript_turn(
+    meeting_id: str,
+    update: TranscriptUpdate,
+    _: CurrentUser = Depends(current_user),
+) -> MeetingStatusResponse:
+    meeting = _get_meeting(meeting_id)
+    if not 0 <= update.index < len(meeting.transcript):
+        raise HTTPException(status_code=422, detail="Transcript turn index is out of range.")
+    text = update.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Transcript text must not be blank.")
+    meeting.transcript[update.index].text = text
+    meeting.mom_markdown = None
+    if meeting.status == MeetingStatus.READY:
+        meeting.status = MeetingStatus.TRANSCRIBED
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
 
