@@ -1,3 +1,4 @@
 faster-whisper==1.1.1
 imageio-ffmpeg==0.6.0
-pyannote.audio==3.3.2
+pyannote.audio>=4.0.0,<5.0
+huggingface_hub>=0.24,<1.0

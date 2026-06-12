@@ -6,6 +6,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -290,7 +291,7 @@ class _EmbeddingBackend:
                 raise SpeakerIdentificationUnavailable(f"Voiceprinting could not decode the recording: {detail[-800:]}")
             return self.torchaudio.load(str(wav_path))
         finally:
-            wav_path.unlink(missing_ok=True)
+            _unlink_with_retry(wav_path)
 
     def embed(self, waveform, sample_rate: int) -> List[float]:
         if sample_rate != 16000:
@@ -370,6 +371,19 @@ def _cosine_similarity(left: List[float], right: List[float]) -> float:
     if not left or not right or len(left) != len(right):
         return -1.0
     return sum(a * b for a, b in zip(left, right))
+
+
+def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                return
+            time.sleep(delay_s)
+        except OSError:
+            return
 
 
 def _env_float(name: str, default: float) -> float:

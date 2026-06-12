@@ -5,6 +5,8 @@ import inspect
 import logging
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from threading import RLock
 from tempfile import NamedTemporaryFile
@@ -54,7 +56,7 @@ class FasterWhisperPyannoteTranscriptionClient:
         self.whisper_model = whisper_model or os.getenv("FASTER_WHISPER_MODEL", "base")
         self.whisper_device = whisper_device or os.getenv("FASTER_WHISPER_DEVICE", "cpu")
         self.whisper_compute_type = whisper_compute_type or os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8")
-        self.pyannote_model = pyannote_model or os.getenv("PYANNOTE_DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
+        self.pyannote_model = "pyannote/speaker-diarization-community-1"
         self.hf_token = hf_token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
 
     async def transcribe(
@@ -80,7 +82,7 @@ class FasterWhisperPyannoteTranscriptionClient:
             await asyncio.to_thread(_decode_audio_for_local_processing, audio_path, str(wav_path))
             return await self._transcribe_internal(str(wav_path), num_speakers, speaker_labels_enabled)
         finally:
-            wav_path.unlink(missing_ok=True)
+            _unlink_with_retry(wav_path)
 
     def _should_predecode_for_diarization(self, num_speakers: int | None, speaker_labels_enabled: bool) -> bool:
         diarization_enabled = os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}
@@ -266,15 +268,24 @@ def _is_cuda_runtime_error(exc: Exception) -> bool:
 
 def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
     requested_device = os.getenv("PYANNOTE_DEVICE", "cpu")
-    cache_key = f"{checkpoint}|{token or ''}|{requested_device}|{id(pipeline_class)}"
+    requested_checkpoint = "pyannote/speaker-diarization-community-1"
+    cache_key = f"{requested_checkpoint}|{token or ''}|{requested_device}|{id(pipeline_class)}"
     if cache_key in _PYANNOTE_PIPELINE_CACHE:
         return _PYANNOTE_PIPELINE_CACHE[cache_key]
 
-    kwargs = {}
-    token_arg = _pyannote_token_arg(pipeline_class)
-    if token and token_arg:
-        kwargs[token_arg] = token
-    pipeline = pipeline_class.from_pretrained(checkpoint, **kwargs)
+    try:
+        pipeline = _load_pyannote_pipeline(pipeline_class, requested_checkpoint, token)
+    except Exception as exc:
+        if "$model/segmentation" in str(exc):
+            raise TranscriptionError(
+                "pyannote/speaker-diarization-community-1 requires a newer compatible pyannote.audio install. "
+                "Run: python -m pip install -U \"pyannote.audio>=4.0.0,<5.0\" \"huggingface_hub>=0.24,<1.0\""
+            ) from exc
+        raise
+    if pipeline is None:
+        raise TranscriptionError(
+            f"Could not load pyannote pipeline '{requested_checkpoint}'. Check HF_TOKEN, model access, and pyannote/huggingface_hub versions."
+        )
     device = requested_device.strip().lower()
     if device and device != "cpu" and hasattr(pipeline, "to"):
         try:
@@ -290,13 +301,77 @@ def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | No
     return pipeline
 
 
-def _pyannote_token_arg(pipeline_class: Any) -> str | None:
+def _load_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
+    _patch_hf_hub_download_auth_kwarg()
+    _patch_pyannote_speaker_diarization_config()
+    if not token:
+        return pipeline_class.from_pretrained(checkpoint)
+
     signature = inspect.signature(pipeline_class.from_pretrained)
+    attempts: list[dict[str, str]] = []
     if "token" in signature.parameters:
-        return "token"
-    if "use_auth_token" in signature.parameters:
-        return "use_auth_token"
-    return None
+        attempts.append({"token": token})
+    attempts.append({})
+
+    last_error: Exception | None = None
+    for kwargs in attempts:
+        try:
+            return pipeline_class.from_pretrained(checkpoint, **kwargs)
+        except TypeError as exc:
+            message = str(exc)
+            if "unexpected keyword argument" not in message:
+                raise
+            last_error = exc
+    if last_error:
+        raise last_error
+    return pipeline_class.from_pretrained(checkpoint)
+
+
+def _patch_pyannote_speaker_diarization_config() -> None:
+    try:
+        from pyannote.audio.pipelines import SpeakerDiarization
+    except Exception:
+        return
+
+    original = getattr(SpeakerDiarization, "__init__", None)
+    if not original or getattr(original, "_mom_plda_compat", False):
+        return
+
+    def init_compat(self: Any, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("plda", None)
+        original(self, *args, **kwargs)
+
+    init_compat._mom_plda_compat = True  # type: ignore[attr-defined]
+    SpeakerDiarization.__init__ = init_compat
+
+
+def _patch_hf_hub_download_auth_kwarg() -> None:
+    try:
+        import huggingface_hub
+        import huggingface_hub.file_download as file_download
+    except Exception:
+        return
+
+    original = getattr(huggingface_hub, "hf_hub_download", None)
+    if not original or getattr(original, "_mom_auth_compat", False):
+        return
+
+    def hf_hub_download_compat(*args: Any, **kwargs: Any) -> Any:
+        if "use_auth_token" in kwargs and "token" not in kwargs:
+            kwargs["token"] = kwargs.pop("use_auth_token")
+        else:
+            kwargs.pop("use_auth_token", None)
+        return original(*args, **kwargs)
+
+    hf_hub_download_compat._mom_auth_compat = True  # type: ignore[attr-defined]
+    huggingface_hub.hf_hub_download = hf_hub_download_compat
+    file_download.hf_hub_download = hf_hub_download_compat
+    for module in list(sys.modules.values()):
+        if module and getattr(module, "hf_hub_download", None) is original:
+            try:
+                setattr(module, "hf_hub_download", hf_hub_download_compat)
+            except Exception:
+                pass
 
 
 def _decode_audio_for_local_processing(input_path: str, output_path: str, sample_rate: int = 16000) -> None:
@@ -325,6 +400,21 @@ def _decode_audio_for_local_processing(input_path: str, output_path: str, sample
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "ffmpeg conversion failed").strip()
         raise TranscriptionError(f"Could not decode recording: {detail[-800:]}")
+
+
+def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                logger.warning("Could not delete temporary audio file %s; it may still be in use.", path, exc_info=True)
+                return
+            time.sleep(delay_s)
+        except OSError:
+            logger.warning("Could not delete temporary audio file %s.", path, exc_info=True)
+            return
 
 
 def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> Dict[str, Any]:
