@@ -48,12 +48,12 @@ class MomGenerationClient:
         data = response.json()
         if self.provider == "ollama":
             try:
-                return data["message"]["content"].strip()
+                return _normalize_mom_markdown(data["message"]["content"].strip())
             except (KeyError, TypeError) as exc:
                 raise MomGenerationError("Ollama response did not include generated MoM content.") from exc
 
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            return _normalize_mom_markdown(data["choices"][0]["message"]["content"].strip())
         except (KeyError, IndexError, TypeError) as exc:
             raise MomGenerationError("Chat completion response did not include generated MoM content.") from exc
 
@@ -118,6 +118,9 @@ Style constraints — never violate these:
 - No bold, italic, underline, or any other inline Markdown styling.
 - No HTML, blockquotes, horizontal rules, or decorative separators.
 - Unordered list bullets must use "- " exactly; never use "*" or "+".
+- Action items must be valid Markdown table rows. Never put bullet points, numbered items, or free text under the Action Items table.
+- Every Action Items row must start with "|" and have exactly five cells: #, Action, Owner, Due Date, Notes.
+- If there are no action items, write exactly one table row: "| 1 | Not stated | Not stated | Not stated | Not stated |".
 - One sentence per bullet. Use past tense for observations; use imperative for action items.
 - Reproduce speaker names exactly as they appear in the transcript — do not paraphrase or abbreviate them.
 - Do not repeat the same fact across multiple sections.\
@@ -193,7 +196,13 @@ bullet "- Not stated" under it.
 ## Action Items
 | # | Action | Owner | Due Date | Notes |
 |---|--------|-------|----------|-------|
-<One row per action item. Owner and Due Date are "Not stated" if not explicit. Notes column captures source context in 10 words or fewer.>
+| 1 | <imperative action sentence, or "Not stated"> | <explicit owner, or "Not stated"> | <explicit due date, or "Not stated"> | <source context in 10 words or fewer, or "Not stated"> |
+
+Rules for Action Items:
+- Replace the example row above with real rows.
+- Every action item must be a table row that starts and ends with "|".
+- Do not write bullets, numbered lists, or plain sentences below the table.
+- If there are no action items, keep exactly one row with "Not stated" values.
 
 ## Risks and Blockers
 <Bullet list of concerns, blockers, or risks explicitly flagged by speakers.>
@@ -231,6 +240,52 @@ def _mom_base_url(provider: str) -> str:
     if provider == "ollama":
         return os.getenv("MOM_BASE_URL") or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     return os.getenv("MOM_BASE_URL") or os.getenv("HF_CHAT_BASE_URL", "https://router.huggingface.co/v1")
+
+
+def _normalize_mom_markdown(markdown: str) -> str:
+    lines = markdown.strip().splitlines()
+    normalized: list[str] = []
+    in_action_items = False
+    action_index = 1
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ") and stripped != "## Action Items":
+            in_action_items = False
+        if stripped == "## Action Items":
+            in_action_items = True
+            action_index = 1
+            normalized.append(line)
+            continue
+        if in_action_items and stripped.startswith("|---"):
+            normalized.append(line)
+            continue
+        if in_action_items and stripped.startswith("|"):
+            normalized.append(line)
+            continue
+        if in_action_items and stripped.startswith("- "):
+            normalized.append(_action_bullet_to_row(stripped[2:], action_index))
+            action_index += 1
+            continue
+        normalized.append(line)
+
+    return "\n".join(normalized).strip()
+
+
+def _action_bullet_to_row(text: str, index: int) -> str:
+    action = text.strip().strip("|")
+    owner = "Not stated"
+    for separator in (" - ", " — ", " – "):
+        if separator in action:
+            action, possible_owner = action.rsplit(separator, 1)
+            if possible_owner.strip():
+                owner = possible_owner.strip()
+            break
+    return f"| {index} | {_table_cell(action)} | {_table_cell(owner)} | Not stated | Not stated |"
+
+
+def _table_cell(value: str) -> str:
+    return (value or "Not stated").replace("|", "/").strip() or "Not stated"
 
 
 def _response_error_detail(response: httpx.Response) -> str:
