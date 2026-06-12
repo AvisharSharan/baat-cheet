@@ -86,10 +86,10 @@ class SpeakerIdentifier:
         max_seconds_per_speaker: float | None = None,
     ) -> None:
         self.profile_store = profile_store or VoiceProfileStore()
-        self.threshold = threshold if threshold is not None else _env_float("VOICE_MATCH_THRESHOLD", 0.76)
+        self.threshold = threshold if threshold is not None else _env_float("VOICE_MATCH_THRESHOLD", 0.68)
         self.min_segment_ms = min_segment_ms if min_segment_ms is not None else _env_int("VOICE_MIN_SEGMENT_MS", 900)
         self.max_seconds_per_speaker = (
-            max_seconds_per_speaker if max_seconds_per_speaker is not None else _env_float("VOICE_MAX_SECONDS_PER_SPEAKER", 35.0)
+            max_seconds_per_speaker if max_seconds_per_speaker is not None else _env_float("VOICE_MAX_SECONDS_PER_SPEAKER", 12.0)
         )
 
     async def extract_speaker_embeddings(self, audio_path: str, transcript: List[SpeakerTurn]) -> Dict[str, List[float]]:
@@ -189,7 +189,21 @@ class SpeakerIdentifier:
             labels[speaker] = match.label if match else speaker
         return labels
 
+    def best_match_scores(self, speaker_embeddings: Dict[str, List[float]]) -> Dict[str, float]:
+        profiles = self.profile_store.load()
+        return {
+            speaker: round(match.score, 3)
+            for speaker, embedding in speaker_embeddings.items()
+            if (match := self._best_match(embedding, profiles)) is not None
+        }
+
     def match(self, embedding: List[float] | None, profiles: Dict[str, List[float]] | None = None) -> SpeakerMatch | None:
+        best = self._best_match(embedding, profiles)
+        if best and best.score >= self.threshold:
+            return best
+        return None
+
+    def _best_match(self, embedding: List[float] | None, profiles: Dict[str, List[float]] | None = None) -> SpeakerMatch | None:
         if not embedding:
             return None
         candidates = profiles if profiles is not None else self.profile_store.load()
@@ -198,9 +212,7 @@ class SpeakerIdentifier:
             score = _cosine_similarity(embedding, profile_embedding)
             if best is None or score > best.score:
                 best = SpeakerMatch(label=label, score=score)
-        if best and best.score >= self.threshold:
-            return best
-        return None
+        return best
 
     def remember_labels(self, speaker_embeddings: Dict[str, List[float]], speaker_names: Dict[str, str]) -> None:
         labeled_embeddings = {
@@ -241,10 +253,11 @@ class _EmbeddingBackend:
 
         self.torch = torch
         self.torchaudio = torchaudio
+        self.device = os.getenv("VOICE_EMBEDDING_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
         self.classifier = EncoderClassifier.from_hparams(
             source=os.getenv("VOICE_EMBEDDING_MODEL", "speechbrain/spkrec-ecapa-voxceleb"),
             savedir=os.getenv("VOICE_EMBEDDING_MODEL_DIR", "pretrained_models/spkrec-ecapa-voxceleb"),
-            run_opts={"device": os.getenv("VOICE_EMBEDDING_DEVICE", "cpu")},
+            run_opts={"device": self.device},
             local_strategy=LocalStrategy.COPY,
         )
 
@@ -297,7 +310,7 @@ class _EmbeddingBackend:
         if sample_rate != 16000:
             waveform = self.torchaudio.functional.resample(waveform, sample_rate, 16000)
         with self.torch.no_grad():
-            embedding = self.classifier.encode_batch(waveform.unsqueeze(0)).squeeze()
+            embedding = self.classifier.encode_batch(waveform.to(self.device).unsqueeze(0)).squeeze()
         return _normalize_vector([float(value) for value in embedding.detach().cpu().tolist()])
 
 
@@ -411,4 +424,4 @@ def voiceprinting_enabled() -> bool:
 
 
 def voiceprinting_worker_enabled() -> bool:
-    return os.getenv("VOICEPRINTING_USE_WORKER", "1").strip().lower() not in {"0", "false", "no", "off"}
+    return os.getenv("VOICEPRINTING_USE_WORKER", "0").strip().lower() not in {"0", "false", "no", "off"}

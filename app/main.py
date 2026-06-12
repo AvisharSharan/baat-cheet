@@ -193,8 +193,11 @@ async def update_speakers(
     if update.remember_voices:
         try:
             SpeakerIdentifier().remember_labels(meeting.speaker_embeddings, meeting.speaker_names)
+            meeting.voiceprint_status = "ready"
+            meeting.voiceprint_error = None
         except Exception:
             logger.warning("Could not persist voice profiles.", exc_info=True)
+            meeting.voiceprint_error = "Could not persist voice profiles. Check the server log for details."
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
 
@@ -326,19 +329,22 @@ async def transcribe_meeting(meeting_id: str) -> None:
             if meeting.speaker_embeddings:
                 meeting.speaker_names = identifier.label_speakers(meeting.speaker_embeddings, speakers)
                 meeting.voiceprint_status = "ready"
-                meeting.voiceprint_error = None
+                matched = sum(1 for speaker in speakers if meeting.speaker_names.get(speaker) != speaker)
+                scores = identifier.best_match_scores(meeting.speaker_embeddings)
+                score_hint = f" Best scores: {scores}" if scores else ""
+                meeting.voiceprint_error = None if matched else f"No saved speaker profile matched this meeting.{score_hint}"
             else:
-                meeting.speaker_names = {speaker: speaker for speaker in speakers}
+                meeting.speaker_names = meeting.speaker_names or {speaker: speaker for speaker in speakers}
                 meeting.voiceprint_status = "unavailable"
                 meeting.voiceprint_error = "No usable speaker audio segments were found for voiceprinting."
         except SpeakerIdentificationUnavailable as exc:
             logger.info("Voiceprinting unavailable: %s", exc)
-            meeting.speaker_names = {speaker: speaker for speaker in speakers}
+            meeting.speaker_names = meeting.speaker_names or {speaker: speaker for speaker in speakers}
             meeting.voiceprint_status = "unavailable"
             meeting.voiceprint_error = str(exc)
         except Exception:
             logger.warning("Voiceprinting failed; falling back to diarized speaker labels.", exc_info=True)
-            meeting.speaker_names = {speaker: speaker for speaker in speakers}
+            meeting.speaker_names = meeting.speaker_names or {speaker: speaker for speaker in speakers}
             meeting.voiceprint_status = "failed"
             meeting.voiceprint_error = "Voiceprinting failed. Check the server log for details."
     except asyncio.CancelledError:
