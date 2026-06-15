@@ -35,6 +35,7 @@ const speakerCount       = document.querySelector("#speakerCount");
 const startBtn           = document.querySelector("#startBtn");
 const stopBtn            = document.querySelector("#stopBtn");
 const momBtn             = document.querySelector("#momBtn");
+const momType            = document.querySelector("#momType");
 const cancelActionBtn    = document.querySelector("#cancelActionBtn");
 const saveSpeakersBtn    = document.querySelector("#saveSpeakersBtn");
 const statusText         = document.querySelector("#statusText");
@@ -363,10 +364,17 @@ async function uploadRecordedFile() {
   await uploadMeetingFile(file, file.name || "recorded-meeting");
 }
 
+function inferredSpeakerCount() {
+  const selected = Number(speakerCount.value);
+  if (Number.isInteger(selected) && selected >= 1) return selected;
+  const microphoneOnly = workflowMode.value !== "recorded" && captureMode.value === "microphone";
+  return microphoneOnly && speakerLabelsToggle.checked ? 2 : NaN;
+}
+
 async function uploadMeetingFile(file, filename) {
   const form = new FormData();
   form.append("audio", file, filename);
-  const expectedSpeakers = Number(speakerCount.value);
+  const expectedSpeakers = inferredSpeakerCount();
   if (speakerLabelsToggle.checked && Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
@@ -545,6 +553,7 @@ function updateControls(data, finalTranscript) {
   const voiceprintsReady = data.voiceprints_ready || data.voiceprint_status === "ready";
   setUploadBusy(busy);
   momBtn.disabled = !finalTranscript.length || data.status === "generating";
+  momType.disabled = busy;
   cancelActionBtn.hidden = !busy;
   cancelActionBtn.disabled = !busy;
   saveSpeakersBtn.disabled = !speakerLabelsEnabled || !finalTranscript.length;
@@ -724,7 +733,11 @@ async function generateMom(options = {}) {
   setStatus("Drafting minutes…");
   momBtn.disabled = true;
   setMomGenerating(true);
-  const response = await apiFetch(`/api/meetings/${meetingId}/mom`, { method: "POST" });
+  const response = await apiFetch(`/api/meetings/${meetingId}/mom`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mom_type: momType.value || "auto" }),
+  });
   if (!response.ok) {
     setStatus("Could not start minutes generation");
     setMomGenerating(false);

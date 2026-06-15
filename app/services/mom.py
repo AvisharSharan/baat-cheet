@@ -38,8 +38,14 @@ class MomGenerationClient:
         speaker_names: Dict[str, str],
         *,
         speaker_labels_enabled: bool = True,
+        mom_type: str = "auto",
     ) -> str:
-        prompt = build_mom_prompt(transcript, speaker_names, speaker_labels_enabled=speaker_labels_enabled)
+        prompt = build_mom_prompt(
+            transcript,
+            speaker_names,
+            speaker_labels_enabled=speaker_labels_enabled,
+            mom_type=mom_type,
+        )
         response = await self._post_chat(prompt)
         if response.status_code >= 400:
             detail = _response_error_detail(response)
@@ -132,6 +138,7 @@ def build_mom_prompt(
     speaker_names: Dict[str, str],
     *,
     speaker_labels_enabled: bool = True,
+    mom_type: str = "auto",
 ) -> str:
     lines = []
     for turn in sorted(transcript, key=lambda item: (item.start_ms is None, item.start_ms if item.start_ms is not None else 0)):
@@ -167,8 +174,11 @@ def build_mom_prompt(
         "The transcript below has already been sorted chronologically. Speaker labels were intentionally "
         "disabled for this meeting, so do not infer attendees, speakers, owners, or facilitators from voice turns."
     )
+    mom_type_instruction = _mom_type_instruction(mom_type)
     return f"""\
 {transcript_context}
+
+{mom_type_instruction}
 
 Generate a Minutes of Meeting document using exactly the Markdown structure below.
 Emit every heading even if a section has no content; in that case write a single
@@ -218,6 +228,36 @@ Rules for Action Items:
 Transcript:
 {transcript_text}
 """
+
+
+def _mom_type_instruction(mom_type: str) -> str:
+    normalized = (mom_type or "auto").strip().lower()
+    instructions = {
+        "auto": (
+            "Meeting type: Auto-detect from the transcript. Quietly infer the closest type and adapt emphasis, "
+            "but do not add a separate meeting-type section."
+        ),
+        "government": (
+            "Meeting type: Government or official review. Emphasize formal decisions, accountable owners, "
+            "public-service context, risks, blockers, and follow-up actions."
+        ),
+        "review": (
+            "Meeting type: Review or status meeting. Emphasize progress, blockers, decisions, dependencies, "
+            "and next follow-up actions."
+        ),
+        "planning": (
+            "Meeting type: Planning or decision meeting. Emphasize proposals, selected decisions, rationale, "
+            "owners, deadlines, and unresolved questions."
+        ),
+        "action": (
+            "Meeting type: Action tracker. Keep discussion brief and emphasize action items, owners, due dates, "
+            "blockers, and open questions."
+        ),
+        "general": (
+            "Meeting type: General meeting. Use the standard balanced MoM structure without over-emphasizing any one section."
+        ),
+    }
+    return instructions.get(normalized, instructions["auto"])
 
 
 def _env_int(name: str, default: int) -> int:

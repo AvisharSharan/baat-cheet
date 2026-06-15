@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
-from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, SpeakerUpdate, TranscriptUpdate
+from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SpeakerUpdate, TranscriptUpdate
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
@@ -223,7 +223,11 @@ async def update_transcript_turn(
 
 
 @app.post("/api/meetings/{meeting_id}/mom", response_model=MeetingStatusResponse)
-async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
+async def generate_mom(
+    meeting_id: str,
+    request: MomGenerateRequest | None = None,
+    _: CurrentUser = Depends(current_user),
+) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
     if not meeting.transcript:
         raise HTTPException(status_code=409, detail="No transcript is available.")
@@ -233,7 +237,7 @@ async def generate_mom(meeting_id: str, _: CurrentUser = Depends(current_user)) 
     meeting.status = MeetingStatus.GENERATING
     meeting.error = None
     store.update(meeting)
-    _start_meeting_task(meeting_id, generate_mom_for_meeting(meeting_id))
+    _start_meeting_task(meeting_id, generate_mom_for_meeting(meeting_id, (request or MomGenerateRequest()).mom_type))
     return MeetingStatusResponse.from_state(meeting)
 
 
@@ -253,13 +257,14 @@ async def cancel_meeting_action(meeting_id: str, _: CurrentUser = Depends(curren
     return MeetingStatusResponse.from_state(meeting)
 
 
-async def generate_mom_for_meeting(meeting_id: str) -> None:
+async def generate_mom_for_meeting(meeting_id: str, mom_type: str = "auto") -> None:
     meeting = store.get(meeting_id)
     try:
         meeting.mom_markdown = await MomGenerationClient().generate(
             meeting.transcript,
             meeting.speaker_names,
             speaker_labels_enabled=meeting.speaker_labels_enabled,
+            mom_type=mom_type,
         )
         meeting.status = MeetingStatus.READY
         meeting.completed_at = meeting.completed_at or datetime.now(timezone.utc)

@@ -54,6 +54,10 @@ class TranscriptUpdate(BaseModel):
     text: str
 
 
+class MomGenerateRequest(BaseModel):
+    mom_type: str = "auto"
+
+
 class MeetingCreateResponse(BaseModel):
     id: str
     name: str
