@@ -1,0 +1,48 @@
+          <!-- Meeting view -->
+          <div id="meetingView" class="meeting-view">
+            <!-- Transcript panel -->
+            <div class="panel panel-transcript">
+              <div class="panel-head">
+                <div class="panel-title-row">
+                  <span class="panel-pulse" id="transcriptDot"></span>
+                  <h2>Transcript</h2>
+                  <span class="panel-badge" id="transcriptBadge" hidden></span>
+                  <span class="waveform-strip" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span>
+                  </span>
+                </div>
+                <p class="panel-sub" id="transcriptSub">Local captions during recording, final transcript after upload</p>
+              </div>
+              <div id="transcript" class="transcript transcript-empty">
+                <div class="empty-state">
+                  <div class="empty-glyph">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                      <circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
+                      <path d="M12 20 Q16 13 20 20 Q24 27 28 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.5"/>
+                      <circle cx="20" cy="20" r="2.5" fill="currentColor" opacity="0.3"/>
+                    </svg>
+                  </div>
+                  <strong>No transcript yet</strong>
+                  <span id="emptyTranscriptMsg">Start recording, then stop to finalize with local transcription and diarization.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Minutes panel -->
+            <div class="panel panel-minutes">
+              <div class="panel-head">
+                <div class="panel-title-row">
+                  <span class="panel-pulse panel-pulse-amber" id="minutesDot"></span>
+                  <h2>Draft Minutes</h2>
+                  <span class="text-flow-strip" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                  </span>
+                </div>
+                <div class="panel-head-right">
+                  <div class="export-links" id="exportLinks"></div>
+                </div>
+              </div>
+              <pre id="momOutput" class="mom mom-empty">Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.</pre>
+            </div>
+          </div>

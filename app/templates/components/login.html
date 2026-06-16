@@ -1,0 +1,40 @@
+    <section id="loginView" class="login-view" aria-live="polite">
+      <div class="login-shell">
+        <form id="loginForm" class="login-panel">
+          <div class="login-brand-row">
+            <div class="brand-mark">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M10 2C5.58 2 2 5.58 2 10s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8Z" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M5.5 10 Q7.5 6.5 10 10 Q12.5 13.5 14.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+            <div>
+              <div class="brand-eyebrow">Meeting Intelligence</div>
+              <h1>Minutes</h1>
+            </div>
+          </div>
+
+          <div class="login-heading">
+            <h2>Sign in</h2>
+            <p>Open your meeting workspace.</p>
+          </div>
+
+          <div class="login-fields">
+            <div class="field-group">
+              <label class="field-label" for="loginUsername">Username</label>
+              <input id="loginUsername" name="username" type="text" autocomplete="username" placeholder="admin" required />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="loginPassword">Password</label>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+            </div>
+          </div>
+
+          <button id="loginBtn" class="btn btn-minutes login-submit" type="submit">
+            <span>Sign in</span>
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 7h9M7.5 3.5 11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <p id="loginError" class="login-error" hidden></p>
+        </form>
+      </div>
+    </section>

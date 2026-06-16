@@ -11,9 +11,10 @@ from typing import Any, Coroutine
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
 from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SpeakerUpdate, TranscriptUpdate
@@ -37,11 +38,12 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "mom-tool"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+async def index(request: Request) -> Response:
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.post("/api/auth/login", response_model=AuthTokenResponse)
