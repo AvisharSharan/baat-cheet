@@ -1,0 +1,83 @@
+/* ═══════════════════════════════════════════════
+   TOKENS (One UI / GalaxyOS Vibe)
+═══════════════════════════════════════════════ */
+:root {
+  /* Dark theme (AMOLED & Deep Grays) */
+  --bg:        #000000;
+  --bg-2:      #0f0f0f;
+  --bg-3:      #1a1a1a;
+  --bg-4:      #262626;
+  --bg-5:      #333333;
+  --border:    #2a2a2a;
+  --border-2:  #3b3b3b;
+  --border-3:  #4d4d4d;
+  --text:      #f5f5f5;
+  --text-2:    #b3b3b3;
+  --text-3:    #808080;
+  --text-4:    #595959;
+
+  /* Primary Accent: Vibrant Galaxy Blue (Mapped to your --gold vars for easy replacement) */
+  --gold:      #3E91FF;
+  --gold-2:    #67a9ff;
+  --gold-3:    #a1cbff;
+  --gold-dim:  rgba(62, 145, 255, 0.12);
+  --gold-glow: rgba(62, 145, 255, 0.25);
+
+  /* Semantic Colors */
+  --green:     #23C552;
+  --green-2:   #4ade80;
+  --green-dim: rgba(35, 197, 82, 0.12);
+
+  --red:       #FF4747;
+  --red-2:     #ff7676;
+  --red-dim:   rgba(255, 71, 71, 0.12);
+
+  --blue:      #3E91FF;
+  --blue-dim:  rgba(62, 145, 255, 0.12);
+
+  --r:         12px;
+  --r-sm:      8px;
+  --r-lg:      20px;
+
+  --font-sans: 'Syne', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Literata', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --shadow-sm: 0 2px 6px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow:    0 8px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+}
+
+html[data-theme="light"] {
+  /* Light theme (Crisp and airy) */
+  --bg:        #f0f2f5;
+  --bg-2:      #ffffff;
+  --bg-3:      #f7f8fa;
+  --bg-4:      #ebeef2;
+  --bg-5:      #dfe3e8;
+  --border:    #d9dce1;
+  --border-2:  #c3c8cf;
+  --border-3:  #aeb4bc;
+  --text:      #121212;
+  --text-2:    #4a4a4a;
+  --text-3:    #737373;
+  --text-4:    #999999;
+
+  /* Primary Accent: Deep System Blue */
+  --gold:      #005BFF;
+  --gold-2:    #0047cc;
+  --gold-3:    #003399;
+  --gold-dim:  rgba(0, 91, 255, 0.1);
+  --gold-glow: rgba(0, 91, 255, 0.2);
+
+  --green:     #1A9E3F;
+  --green-2:   #147d32;
+  --green-dim: rgba(26, 158, 63, 0.1);
+
+  --red:       #E02424;
+  --red-2:     #b01c1c;
+  --red-dim:   rgba(224, 36, 36, 0.1);
+
+  --shadow-sm: 0 2px 6px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+  --shadow:    0 8px 24px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.03);
+}
+
