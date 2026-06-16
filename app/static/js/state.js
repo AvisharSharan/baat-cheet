@@ -1,0 +1,20 @@
+var recorder;
+var chunks = [];
+var meetingId = null;
+var pollTimer = null;
+var activeStreams = [];
+var activeAudioContext = null;
+var liveAudioContext = null;
+var liveSocket = null;
+var liveAudioNodes = [];
+var liveTranscript = [];
+var recordingUrl = null;
+var recTimerInterval = null;
+var recStartTime = null;
+var isFinalizingRecording = false;
+var editingTranscriptIndex = null;
+var liveSampleRate = 16000;
+var authTokenKey = "momAuthToken";
+var authToken = localStorage.getItem(authTokenKey) || "";
+var currentUsername = "";
+
