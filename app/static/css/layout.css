@@ -35,19 +35,6 @@
   flex-shrink: 0;
 }
 
-.brand-mark {
-  width: 38px;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r);
-  border: 1px solid var(--border-2);
-  background: var(--bg-3);
-  color: var(--gold);
-  flex-shrink: 0;
-}
-
 h1 {
   font-family: var(--font-sans);
   font-size: 26px;
@@ -208,6 +195,7 @@ html[data-theme="light"] .theme-moon { display: block; }
   align-items: stretch;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ═══════════════════════════════════════════════
@@ -219,6 +207,7 @@ html[data-theme="light"] .theme-moon { display: block; }
   border-right: 1px solid var(--border);
   background: var(--bg-2);
   height: 100%;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: none;
   scrollbar-width: none;
@@ -759,13 +748,22 @@ body[data-state="recording"] .record-dot {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .meeting-view {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.meeting-view > .panel {
+  min-width: 0;
 }
 
 .split-panels {
@@ -852,14 +850,10 @@ body[data-state="recording"] .record-dot {
 /* ═══════════════════════════════════════════════
    CONTENT AREA
 ═══════════════════════════════════════════════ */
-.content-area {
-  min-width: 0;
-}
-
-.meeting-view {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
+.history-view {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .meeting-view[hidden], .history-view[hidden] { display: none; }
