@@ -21,9 +21,7 @@ html[data-theme="light"] .noise-overlay { opacity: 0.012; }
   place-items: center;
   padding: 28px;
   overflow: auto;
-  background:
-    radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 32%),
-    linear-gradient(135deg, color-mix(in srgb, var(--bg-2) 72%, var(--bg)), var(--bg));
+  background: var(--bg);
   backdrop-filter: blur(20px);
 }
 
@@ -44,9 +42,9 @@ body.auth-pending {
   display: block;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--bg-2) 92%, transparent);
-  box-shadow: 0 28px 80px rgba(0,0,0,0.45), var(--shadow);
+  border-radius: 0;
+  background: var(--bg-2);
+  box-shadow: none;
 }
 
 .login-panel {
@@ -98,7 +96,7 @@ body.auth-pending {
   min-height: 44px;
   padding: 0 13px;
   border: 1px solid var(--border-2);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--bg-3);
   color: var(--text);
   font: 600 14px/1 var(--font-sans);
@@ -111,9 +109,8 @@ body.auth-pending {
 }
 
 .login-panel input:focus {
-  border-color: var(--gold);
+  border-color: var(--text);
   background: var(--bg-2);
-  box-shadow: 0 0 0 3px var(--gold-dim);
 }
 
 .login-submit {

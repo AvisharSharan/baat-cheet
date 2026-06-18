@@ -3,6 +3,8 @@
 ═══════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body { overscroll-behavior: none; }
+
 html { font-size: 15px; }
 
 body {

@@ -4,9 +4,9 @@
 .panel-history {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 180px);
-  min-height: 500px;
-  max-height: calc(100vh - 180px);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -15,6 +15,7 @@
   min-height: 0;
   padding: 12px;
   overflow-y: auto;
+  overscroll-behavior: none;
   scrollbar-width: thin;
   scrollbar-color: var(--bg-4) transparent;
   display: flex;
@@ -143,23 +144,6 @@
   font-family: var(--font-mono);
   line-height: 1.4;
 }
-
-/* ═══════════════════════════════════════════════
-   FOOTER
-═══════════════════════════════════════════════ */
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding-top: 16px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-4);
-  border-top: 1px solid var(--border);
-}
-
-.sep { opacity: 0.4; }
 
 /* ═══════════════════════════════════════════════
    SCROLLBARS
