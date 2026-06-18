@@ -16,8 +16,9 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
-from .models import MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SpeakerUpdate, TranscriptUpdate
+from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, change_password, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
+from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SettingsResponse, SettingsUpdateRequest, SpeakerUpdate, TranscriptUpdate
+from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
@@ -55,6 +56,49 @@ async def login(request: LoginRequest) -> AuthTokenResponse:
 @app.get("/api/auth/me", response_model=CurrentUser)
 async def me(user: CurrentUser = Depends(current_user)) -> CurrentUser:
     return user
+
+
+@app.post("/api/auth/change-password", status_code=204)
+async def api_change_password(
+    request: ChangePasswordRequest,
+    _: CurrentUser = Depends(current_user),
+) -> Response:
+    change_password(request.current_password, request.new_password)
+    return Response(status_code=204)
+
+
+@app.get("/api/settings", response_model=SettingsResponse)
+async def get_settings(_: CurrentUser = Depends(current_user)) -> SettingsResponse:
+    return SettingsResponse(**load_settings())
+
+
+@app.put("/api/settings", response_model=SettingsResponse)
+async def update_settings(
+    request: SettingsUpdateRequest,
+    _: CurrentUser = Depends(current_user),
+) -> SettingsResponse:
+    updates = request.model_dump(exclude_none=True)
+    return SettingsResponse(**save_settings(updates))
+
+
+@app.get("/api/settings/ollama-models")
+async def list_ollama_models(_: CurrentUser = Depends(current_user)) -> Any:
+    """Proxy the local Ollama tags endpoint to list available models."""
+    import httpx
+    settings = load_settings()
+    base = settings.get("ollama_base_url", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{base}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+            models = [
+                {"name": m["name"], "size": m.get("size"), "modified_at": m.get("modified_at")}
+                for m in data.get("models", [])
+            ]
+            return {"models": models}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach Ollama: {exc}")
 
 
 @app.websocket("/api/live/transcribe")

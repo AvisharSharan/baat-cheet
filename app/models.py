@@ -138,3 +138,34 @@ class MeetingStatusResponse(BaseModel):
             voiceprint_error=state.voiceprint_error,
             mom_markdown=state.mom_markdown,
         )
+
+
+class SettingsResponse(BaseModel):
+    ollama_base_url: str = ""
+    ollama_model: str = ""
+    mom_max_tokens: str = "1200"
+    ollama_num_ctx: str = "32768"
+    ollama_num_gpu: str = "0"
+    whisper_model: str = "base"
+    whisper_device: str = "cuda"
+    live_whisper_model: str = "base"
+    diarization_provider: str = "pyannote"
+    voiceprinting_enabled: str = "1"
+
+
+class SettingsUpdateRequest(BaseModel):
+    ollama_base_url: Optional[str] = None
+    ollama_model: Optional[str] = None
+    mom_max_tokens: Optional[str] = None
+    ollama_num_ctx: Optional[str] = None
+    ollama_num_gpu: Optional[str] = None
+    whisper_model: Optional[str] = None
+    whisper_device: Optional[str] = None
+    live_whisper_model: Optional[str] = None
+    diarization_provider: Optional[str] = None
+    voiceprinting_enabled: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

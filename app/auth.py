@@ -177,3 +177,20 @@ def _unauthorized() -> HTTPException:
         detail="Invalid or expired credentials.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def change_password(current_password: str, new_password: str) -> None:
+    """Verify current password and update to new password.
+
+    Updates ``os.environ`` so subsequent calls to ``load_auth_settings``
+    pick up the new hash without a server restart.
+    """
+    settings = load_auth_settings()
+    if not verify_password(current_password, settings.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if len(new_password) < 4:
+        raise HTTPException(status_code=400, detail="New password must be at least 4 characters.")
+    new_hash = hash_password(new_password)
+    os.environ["LOCAL_AUTH_PASSWORD_HASH"] = new_hash
+    # Clear the plaintext env var so the hash takes precedence on next load
+    os.environ.pop("LOCAL_AUTH_PASSWORD", None)

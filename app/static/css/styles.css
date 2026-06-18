@@ -1,6 +1,7 @@
 @import "variables.css";
 @import "base.css";
 @import "components/login.css";
+@import "components/settings.css";
 @import "layout.css";
 @import "components/panels.css";
 @import "components/transcript.css";
