@@ -2,15 +2,15 @@
           <div id="meetingView" class="meeting-view show-transcript">
             <!-- Mobile Tabs -->
             <div class="mobile-tabs">
-              <button class="mobile-tab active" data-target="transcript" type="button" onclick="switchMobileTab('transcript')">Transcript</button>
-              <button class="mobile-tab" data-target="minutes" type="button" onclick="switchMobileTab('minutes')">Draft Minutes</button>
+              <button class="mobile-tab active" data-target="transcript" type="button" onclick="switchMobileTab('transcript')" data-i18n="meet.tab_trans">Transcript</button>
+              <button class="mobile-tab" data-target="minutes" type="button" onclick="switchMobileTab('minutes')" data-i18n="meet.tab_mom">Draft Minutes</button>
             </div>
             <!-- Transcript panel -->
             <div class="panel panel-transcript">
               <div class="panel-head">
                 <div class="panel-title-row">
                   <span class="panel-pulse" id="transcriptDot"></span>
-                  <h2>Transcript</h2>
+                  <h2 data-i18n="meet.trans_title">Transcript</h2>
                   <span class="panel-badge" id="transcriptBadge" hidden></span>
                   <span class="waveform-strip" aria-hidden="true">
                     <span></span><span></span><span></span><span></span><span></span>
@@ -27,8 +27,8 @@
                       <circle cx="20" cy="20" r="2.5" fill="currentColor" opacity="0.3"/>
                     </svg>
                   </div>
-                  <strong>No transcript yet</strong>
-                  <span id="emptyTranscriptMsg">Start recording, then stop to finalize with local transcription and diarization.</span>
+                  <strong data-i18n="meet.empty_trans">No transcript yet</strong>
+                  <span id="emptyTranscriptMsg" data-i18n="meet.empty_trans_sub">Start recording, then stop to finalize with local transcription and diarization.</span>
                 </div>
               </div>
             </div>
@@ -38,7 +38,7 @@
               <div class="panel-head">
                 <div class="panel-title-row">
                   <span class="panel-pulse panel-pulse-amber" id="minutesDot"></span>
-                  <h2>Draft Minutes</h2>
+                  <h2 data-i18n="meet.mom_title">Draft Minutes</h2>
                   <span class="text-flow-strip" aria-hidden="true">
                     <span></span><span></span><span></span>
                   </span>
@@ -47,6 +47,6 @@
                   <div class="export-links" id="exportLinks"></div>
                 </div>
               </div>
-              <pre id="momOutput" class="mom mom-empty">Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.</pre>
+              <pre id="momOutput" class="mom mom-empty" data-i18n="meet.empty_mom">Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.</pre>
             </div>
           </div>

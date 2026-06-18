@@ -87,11 +87,13 @@ html[data-theme="light"] .doodle-icon {
 
 .login-view[hidden] { display: none; }
 
-.login-theme-toggle {
+.login-actions {
   position: absolute;
   top: 20px;
   right: 20px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
 }
 
 body.auth-pending .shell {

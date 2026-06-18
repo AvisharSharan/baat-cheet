@@ -3,29 +3,29 @@
       <div class="settings-backdrop" onclick="closeSettings()"></div>
       <div class="settings-panel">
         <div class="settings-header">
-          <h2>Settings</h2>
+          <h2 data-i18n="set.title">Settings</h2>
           <button class="icon-btn" type="button" onclick="closeSettings()" aria-label="Close settings">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
         </div>
 
         <nav class="settings-tabs">
-          <button class="settings-tab active" data-tab="ai" type="button" onclick="switchSettingsTab('ai')">AI Model</button>
-          <button class="settings-tab" data-tab="transcription" type="button" onclick="switchSettingsTab('transcription')">Transcription</button>
-          <button class="settings-tab" data-tab="account" type="button" onclick="switchSettingsTab('account')">Account</button>
+          <button class="settings-tab active" data-tab="ai" type="button" onclick="switchSettingsTab('ai')"><span data-i18n="set.tab_ai">AI Model</span></button>
+          <button class="settings-tab" data-tab="transcription" type="button" onclick="switchSettingsTab('transcription')"><span data-i18n="set.tab_trans">Transcription</span></button>
+          <button class="settings-tab" data-tab="account" type="button" onclick="switchSettingsTab('account')"><span data-i18n="set.tab_acc">Account</span></button>
         </nav>
 
         <div class="settings-body">
           <!-- AI Model Tab -->
           <div class="settings-section" data-section="ai">
             <div class="setting-group">
-              <label class="setting-label">Ollama Base URL</label>
+              <label class="setting-label" data-i18n="set.ollama_url">Ollama Base URL</label>
               <input id="settOllamaUrl" type="text" class="setting-input" placeholder="http://127.0.0.1:11434" />
-              <span class="setting-hint">The URL of your local Ollama instance</span>
+              <span class="setting-hint" data-i18n="set.ollama_url_hint">The URL of your local Ollama instance</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Model</label>
+              <label class="setting-label" data-i18n="set.model">Model</label>
               <div class="setting-row">
                 <select id="settOllamaModel" class="setting-select">
                   <option value="">Loading…</option>
@@ -34,32 +34,32 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 </button>
               </div>
-              <span class="setting-hint">Select from models installed in your Ollama instance</span>
+              <span class="setting-hint" data-i18n="set.model_hint">Select from models installed in your Ollama instance</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Max Tokens</label>
+              <label class="setting-label" data-i18n="set.max_tokens">Max Tokens</label>
               <input id="settMaxTokens" type="number" class="setting-input" placeholder="1200" min="256" max="8192" />
-              <span class="setting-hint">Maximum tokens for generated minutes (256–8192)</span>
+              <span class="setting-hint" data-i18n="set.max_tokens_hint">Maximum tokens for generated minutes (256–8192)</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Context Window</label>
+              <label class="setting-label" data-i18n="set.ctx">Context Window</label>
               <input id="settNumCtx" type="number" class="setting-input" placeholder="32768" min="2048" max="131072" />
-              <span class="setting-hint">Ollama context window size</span>
+              <span class="setting-hint" data-i18n="set.ctx_hint">Ollama context window size</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">GPU Layers</label>
+              <label class="setting-label" data-i18n="set.gpu">GPU Layers</label>
               <input id="settNumGpu" type="number" class="setting-input" placeholder="0" min="0" />
-              <span class="setting-hint">Number of GPU layers to offload (0 = CPU only)</span>
+              <span class="setting-hint" data-i18n="set.gpu_hint">Number of GPU layers to offload (0 = CPU only)</span>
             </div>
           </div>
 
           <!-- Transcription Tab -->
           <div class="settings-section" data-section="transcription" hidden>
             <div class="setting-group">
-              <label class="setting-label">Whisper Model</label>
+              <label class="setting-label" data-i18n="set.w_model">Whisper Model</label>
               <select id="settWhisperModel" class="setting-select">
                 <option value="tiny">tiny</option>
                 <option value="base">base</option>
@@ -68,84 +68,84 @@
                 <option value="large-v2">large-v2</option>
                 <option value="large-v3">large-v3</option>
               </select>
-              <span class="setting-hint">Larger models are more accurate but slower</span>
+              <span class="setting-hint" data-i18n="set.w_model_hint">Larger models are more accurate but slower</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Whisper Device</label>
+              <label class="setting-label" data-i18n="set.w_dev">Whisper Device</label>
               <select id="settWhisperDevice" class="setting-select">
                 <option value="cuda">CUDA (GPU)</option>
                 <option value="cpu">CPU</option>
               </select>
-              <span class="setting-hint">Use CUDA for faster transcription if available</span>
+              <span class="setting-hint" data-i18n="set.w_dev_hint">Use CUDA for faster transcription if available</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Live Preview Model</label>
+              <label class="setting-label" data-i18n="set.w_live">Live Preview Model</label>
               <select id="settLiveWhisperModel" class="setting-select">
                 <option value="tiny">tiny</option>
                 <option value="base">base</option>
                 <option value="small">small</option>
               </select>
-              <span class="setting-hint">Model used for live caption preview during recording</span>
+              <span class="setting-hint" data-i18n="set.w_live_hint">Model used for live caption preview during recording</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Speaker Diarization</label>
+              <label class="setting-label" data-i18n="set.diar">Speaker Diarization</label>
               <select id="settDiarization" class="setting-select">
                 <option value="pyannote">pyannote (GPU recommended)</option>
                 <option value="none">Disabled</option>
               </select>
-              <span class="setting-hint">Identifies who said what in multi-speaker meetings</span>
+              <span class="setting-hint" data-i18n="set.diar_hint">Identifies who said what in multi-speaker meetings</span>
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Voice Profiles</label>
+              <label class="setting-label" data-i18n="set.vp">Voice Profiles</label>
               <select id="settVoiceprinting" class="setting-select">
                 <option value="1">Enabled</option>
                 <option value="0">Disabled</option>
               </select>
-              <span class="setting-hint">Remember speaker voices across meetings</span>
+              <span class="setting-hint" data-i18n="set.vp_hint">Remember speaker voices across meetings</span>
             </div>
           </div>
 
           <!-- Account Tab -->
           <div class="settings-section" data-section="account" hidden>
             <div class="setting-group">
-              <label class="setting-label">Username</label>
+              <label class="setting-label" data-i18n="set.user">Username</label>
               <input id="settUsername" type="text" class="setting-input" disabled />
-              <span class="setting-hint">Username cannot be changed at runtime</span>
+              <span class="setting-hint" data-i18n="set.user_hint">Username cannot be changed at runtime</span>
             </div>
 
             <hr class="setting-divider" />
 
-            <h3 class="setting-subheading">Change Password</h3>
+            <h3 class="setting-subheading" data-i18n="set.pwd_title">Change Password</h3>
 
             <div class="setting-group">
-              <label class="setting-label">Current Password</label>
+              <label class="setting-label" data-i18n="set.pwd_cur">Current Password</label>
               <input id="settCurrentPwd" type="password" class="setting-input" autocomplete="current-password" />
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">New Password</label>
+              <label class="setting-label" data-i18n="set.pwd_new">New Password</label>
               <input id="settNewPwd" type="password" class="setting-input" autocomplete="new-password" />
             </div>
 
             <div class="setting-group">
-              <label class="setting-label">Confirm New Password</label>
+              <label class="setting-label" data-i18n="set.pwd_conf">Confirm New Password</label>
               <input id="settConfirmPwd" type="password" class="setting-input" autocomplete="new-password" />
             </div>
 
             <button id="changePasswordBtn" class="btn btn-minutes btn-sm" type="button" onclick="changeUserPassword()">
-              Update Password
+              <span data-i18n="set.pwd_btn">Update Password</span>
             </button>
             <p id="passwordMsg" class="setting-msg" hidden></p>
           </div>
         </div>
 
         <div class="settings-footer">
-          <button class="btn btn-ghost btn-sm" type="button" onclick="closeSettings()">Cancel</button>
-          <button id="saveSettingsBtn" class="btn btn-minutes btn-sm" type="button" onclick="saveAppSettings()">Save Changes</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="closeSettings()"><span data-i18n="set.cancel">Cancel</span></button>
+          <button id="saveSettingsBtn" class="btn btn-minutes btn-sm" type="button" onclick="saveAppSettings()"><span data-i18n="set.save">Save Changes</span></button>
         </div>
       </div>
     </div>

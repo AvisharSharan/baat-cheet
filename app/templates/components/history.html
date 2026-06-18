@@ -4,11 +4,11 @@
               <div class="panel-head">
                 <div class="panel-title-row">
                   <span class="panel-pulse panel-pulse-green"></span>
-                  <h2>Meeting History</h2>
+                  <h2 data-i18n="hist.title">Meeting History</h2>
                 </div>
                 <button id="refreshHistoryBtn" class="btn btn-ghost btn-sm" type="button">
                   <svg width="12" height="12" viewBox="0 0 12 12"><path d="M10.5 6a4.5 4.5 0 1 1-1-2.8" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/><path d="M9 1v3h3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  Refresh
+                  <span data-i18n="hist.refresh">Refresh</span>
                 </button>
               </div>
               <div id="historyList" class="history-list">
@@ -19,8 +19,8 @@
                       <path d="M20 11v10l6 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
                     </svg>
                   </div>
-                  <strong>No meetings yet</strong>
-                  <span>Completed meetings will appear here with their transcript and minutes.</span>
+                  <strong data-i18n="hist.empty_title">No meetings yet</strong>
+                  <span data-i18n="hist.empty_sub">Completed meetings will appear here with their transcript and minutes.</span>
                 </div>
               </div>
             </div>

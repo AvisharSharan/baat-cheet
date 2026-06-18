@@ -15,21 +15,25 @@
         <nav class="topnav">
           <button id="newMeetingBtn" class="topnav-btn active" type="button">
             <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7 4.5v5M4.5 7h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-            New Meeting
+            <span data-i18n="topbar.new">New Meeting</span>
           </button>
           <button id="historyTabBtn" class="topnav-btn" type="button">
             <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7 4v3.5l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            History
+            <span data-i18n="topbar.history">History</span>
           </button>
         </nav>
 
         <div class="topbar-right">
           <div class="global-status">
             <span class="global-status-dot"></span>
-            <span id="statusText">Ready</span>
+            <span id="statusText" data-i18n="top.status">Ready</span>
           </div>
           <div class="user-chip" id="userChip" hidden></div>
-          <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button" hidden>Logout</button>
+          <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button" hidden data-i18n="top.logout">Logout</button>
+
+          <button id="langToggle" class="icon-btn" type="button" aria-label="Toggle language" onclick="toggleLanguage()">
+            <span style="font-weight: 600; font-size: 14px;">A/अ</span>
+          </button>
 
           <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings" onclick="openSettings()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
