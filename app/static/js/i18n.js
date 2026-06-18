@@ -119,8 +119,8 @@ const i18nDict = {
     "topbar.new": "नई बैठक",
     "topbar.history": "इतिहास",
     // Login
-    "login.title": "वापसी पर स्वागत है",
-    "login.subtitle": "अपने कार्यक्षेत्र में साइन इन करें",
+    "login.title": "नमस्ते, फिर से स्वागत है",
+    "login.subtitle": "अपने वर्कस्पेस में साइन इन करें",
     "login.username": "उपयोगकर्ता नाम",
     "login.password": "पासवर्ड",
     "login.btn": "साइन इन करें",
@@ -133,7 +133,7 @@ const i18nDict = {
     "login.feat3_sub": "AI द्वारा तैयार किए गए संरचित MoM",
     "login.footer": "लोकल-फर्स्ट · गोपनीयता-केंद्रित",
     // Sidebar Setup
-    "setup.title": "सेटअप",
+    "setup.title": "सेटप",
     "setup.name": "बैठक का नाम",
     "setup.name_ph": "उदाहरण: साप्ताहिक समीक्षा",
     "setup.mode": "मोड",
@@ -146,7 +146,7 @@ const i18nDict = {
     "setup.local_prev": "लोकल प्रीव्यू",
     "setup.file_label": "ऑडियो या वीडियो फ़ाइल",
     "setup.file_drop": "फ़ाइल छोड़ें या ब्राउज़ करने के लिए क्लिक करें",
-    "setup.speakers": "संभावित वक्ता",
+    "setup.speakers": "स्पीकर की संख्या",
     "setup.optional": "वैकल्पिक",
     "setup.auto_detect": "स्वतः पता लगाएं",
     "setup.speaker_labels": "स्पीकर लेबल",
@@ -158,7 +158,7 @@ const i18nDict = {
     "cap.upload": "अपलोड और ट्रांसक्राइब करें",
     "cap.download": "ऑडियो डाउनलोड करें",
     // Sidebar Label & Finalize
-    "fin.title": "लेबल और फाइनल",
+    "fin.title": "लेबल करें और सेव करें",
     "fin.speakers": "वक्ता",
     "fin.turns": "टर्न",
     "fin.words": "शब्द",
@@ -169,21 +169,21 @@ const i18nDict = {
     "fin.type_plan": "योजना / निर्णय",
     "fin.type_action": "एक्शन ट्रैकर",
     "fin.type_gen": "सामान्य बैठक",
-    "fin.draft": "मिनट्स ड्राफ्ट करें",
-    "fin.cancel": "वर्तमान कार्रवाई रद्द करें",
+    "fin.draft": "मिनट्स तैयार करें",
+    "fin.cancel": "कार्रवाई रद्द करें",
     "fin.remember": "आवाज़ें याद रखें",
-    "fin.save": "लेबल सहेजें",
-    "fin.hint": "मीटिंग ऑडियो रिकॉर्ड या अपलोड करें, फिर फास्टर-व्हिस्पर ट्रांसक्रिप्शन और पायनोट डायराइजेशन के साथ स्थानीय रूप से अंतिम रूप दें।",
+    "fin.save": "सेव करें",
+    "fin.hint": "ऑडियो रिकॉर्ड या अपलोड करें, और फिर स्थानीय रूप से ट्रांसक्राइब करें।",
     // History
-    "hist.title": "बैठक का इतिहास",
+    "hist.title": "मीटिंग का इतिहास",
     "hist.refresh": "रिफ्रेश करें",
-    "hist.empty_title": "अभी तक कोई बैठक नहीं",
-    "hist.empty_sub": "पूरी की गई बैठकें उनके ट्रांसक्रिप्ट और मिनट्स के साथ यहां दिखाई देंगी।",
+    "hist.empty_title": "कोई मीटिंग नहीं",
+    "hist.empty_sub": "आपकी पूरी की गई मीटिंग्स यहाँ दिखाई देंगी।",
     // Meeting View
     "meet.tab_trans": "ट्रांसक्रिप्ट",
     "meet.tab_mom": "मिनट्स ड्राफ्ट",
     "meet.trans_title": "ट्रांसक्रिप्ट",
-    "meet.empty_trans": "अभी तक कोई ट्रांसक्रिप्ट नहीं",
+    "meet.empty_trans": "कोई ट्रांसक्रिप्ट उपलब्ध नहीं",
     "meet.empty_trans_sub": "रिकॉर्डिंग शुरू करें, फिर स्थानीय ट्रांसक्रिप्शन और डायराइजेशन के साथ अंतिम रूप देने के लिए रोकें।",
     "meet.mom_title": "ड्राफ्ट मिनट्स",
     "meet.empty_mom": "पहले बैठक का ट्रांसक्राइब करें, फिर AI-संचालित मिनट्स उत्पन्न करने के लिए ड्राफ्ट मिनट्स पर क्लिक करें।",
@@ -246,7 +246,7 @@ function setLanguage(lang) {
         // Keep icons intact if it's a button with inner HTML
         // For buttons that might have SVG + text, we need to be careful.
         // Easiest is to wrap the text in a span.
-        if (el.tagName === "SPAN" || el.tagName === "DIV" || el.tagName === "H1" || el.tagName === "H2" || el.tagName === "H3" || el.tagName === "P" || el.tagName === "LABEL" || el.tagName === "STRONG" || el.tagName === "BUTTON") {
+        if (el.tagName === "SPAN" || el.tagName === "DIV" || el.tagName === "H1" || el.tagName === "H2" || el.tagName === "H3" || el.tagName === "P" || el.tagName === "LABEL" || el.tagName === "STRONG" || el.tagName === "BUTTON" || el.tagName === "PRE") {
           // If the element has children (like svgs), only replace the text nodes.
           let hasElementChildren = Array.from(el.childNodes).some(n => n.nodeType === 1);
           if (hasElementChildren) {
