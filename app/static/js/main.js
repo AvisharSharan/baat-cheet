@@ -13,6 +13,7 @@ momBtn.addEventListener("click", generateMom);
 cancelActionBtn.addEventListener("click", cancelActiveAction);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 themeToggle.addEventListener("click", toggleTheme);
+document.getElementById("loginThemeToggle").addEventListener("click", toggleTheme);
 newMeetingBtn.addEventListener("click", startNewMeeting);
 historyTabBtn.addEventListener("click", showHistory);
 refreshHistoryBtn.addEventListener("click", loadHistory);

@@ -31,20 +31,68 @@ html[data-theme="light"] .noise-overlay { opacity: 0.02; }
 .doodle-bg {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
   z-index: -1;
   pointer-events: none;
-  color: var(--text-4);
-  opacity: 0.12;
+  overflow: hidden;
 }
 
-html[data-theme="light"] .doodle-bg {
+.doodle-icon {
+  position: absolute;
+  color: var(--text-4);
+  opacity: 0.18;
+}
+
+html[data-theme="light"] .doodle-icon {
   color: var(--text-3);
-  opacity: 0.08;
+  opacity: 0.1;
+}
+
+/* Positions — scattered across corners and edges */
+.doodle-1  { top: 8%;   left: 6%;   animation: doodleFloat1 7s ease-in-out infinite; }
+.doodle-2  { top: 12%;  right: 8%;  animation: doodleFloat2 9s ease-in-out infinite; }
+.doodle-3  { bottom: 22%; left: 12%;  animation: doodleFloat3 8s ease-in-out infinite; }
+.doodle-4  { top: 38%;  left: 3%;   animation: doodleSpin 12s linear infinite; }
+.doodle-5  { bottom: 10%; right: 5%;  animation: doodleFloat1 10s ease-in-out infinite; }
+.doodle-6  { top: 6%;   left: 42%;  animation: doodleFloat2 8.5s ease-in-out infinite; }
+.doodle-7  { bottom: 6%;  left: 35%;  animation: doodleSpin 8s linear infinite; }
+.doodle-8  { bottom: 35%; right: 3%;  animation: doodleFloat3 9.5s ease-in-out infinite; }
+.doodle-9  { top: 55%;  left: 8%;   animation: doodleFloat2 11s ease-in-out infinite; }
+.doodle-10 { top: 28%;  right: 12%;  animation: doodleFloat1 7.5s ease-in-out infinite; }
+
+/* Floating animations — each has a unique path */
+@keyframes doodleFloat1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25%      { transform: translate(6px, -10px) rotate(3deg); }
+  50%      { transform: translate(-4px, -18px) rotate(-2deg); }
+  75%      { transform: translate(8px, -8px) rotate(4deg); }
+}
+
+@keyframes doodleFloat2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33%      { transform: translate(-8px, 12px) rotate(-4deg); }
+  66%      { transform: translate(6px, -6px) rotate(3deg); }
+}
+
+@keyframes doodleFloat3 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20%      { transform: translate(10px, -5px) rotate(2deg); }
+  50%      { transform: translate(-6px, 10px) rotate(-3deg); }
+  80%      { transform: translate(4px, -12px) rotate(1deg); }
+}
+
+@keyframes doodleSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .login-view[hidden] { display: none; }
+
+.login-theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+}
 
 body.auth-pending .shell {
   pointer-events: none;
