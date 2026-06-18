@@ -1,6 +1,6 @@
-# Verbari
+# बात-Cheet
 
-Verbari is a local-first meeting intelligence tool. It records live meetings or
+बात-Cheet is a local-first meeting intelligence tool. It records live meetings or
 accepts uploaded media, creates a transcript with faster-whisper, optionally
 diarizes speakers with pyannote.audio, helps review speaker labels, and drafts
 structured Minutes of Meeting with Ollama or another OpenAI-compatible chat
