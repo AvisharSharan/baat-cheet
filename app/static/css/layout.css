@@ -158,6 +158,63 @@ body[data-state="processing"] .global-progress {
   100% { background-position: -100% 0; }
 }
 
+/* ═══════════════════════════════════════════════
+   AI GLOW EFFECT (Processing State)
+═══════════════════════════════════════════════ */
+.ai-glow-container {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 2s ease-in-out, visibility 2s;
+  
+  /* Extremely soft, deep fade mask for a subtle ambient light */
+  -webkit-mask-image: 
+    linear-gradient(to bottom, #000 0%, transparent 150px, transparent calc(100% - 150px), #000 100%),
+    linear-gradient(to right, #000 0%, transparent 150px, transparent calc(100% - 150px), #000 100%);
+  -webkit-mask-composite: source-over;
+  mask-composite: add;
+}
+
+body[data-state="processing"] .ai-glow-container {
+  opacity: 0.35; /* Much softer overall intensity */
+  visibility: visible;
+  transition: opacity 2s ease-in-out;
+}
+
+.ai-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Use vmax so the square is always larger than the screen diagonal, hiding the edges during rotation */
+  width: 150vmax;
+  height: 150vmax;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--gold-2) 10%,
+    transparent 25%,
+    transparent 50%,
+    var(--gold-2) 60%,
+    transparent 75%
+  );
+  filter: blur(30px); /* Heavy blur for a dispersed, ambient light */
+  animation: aiSpin 8s linear infinite; /* Slower, more elegant sweep */
+}
+
+/* Light mode adjustment for the glow to not overpower */
+html[data-theme="light"] .ai-glow {
+  opacity: 0.6;
+}
+
+@keyframes aiSpin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+
 /* Recording state */
 body[data-state="recording"] .global-status-dot {
   background: var(--green);
