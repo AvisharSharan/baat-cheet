@@ -196,7 +196,6 @@
   padding: 12px 18px;
   border-left: 0;
   border-right: 0;
-  backdrop-filter: blur(12px);
 }
 
 .ai-processing-block {
