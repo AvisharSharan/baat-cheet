@@ -3,17 +3,18 @@
 ═══════════════════════════════════════════════ */
 .panel {
   background: var(--bg-2);
+  backdrop-filter: var(--glass-blur);
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-3);
+  box-shadow: var(--shadow-sm);
 }
 .panel-transcript {
-  border-right: 1px solid var(--border);
+  /* removed solid border for floating look */
 }
 
 .panel-transcript.transcript-processing {
@@ -74,13 +75,14 @@
 
 .panel-head {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-2);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
   background: var(--bg-3);
+  backdrop-filter: var(--glass-blur);
 }
 
 .panel-title-row {
