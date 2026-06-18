@@ -24,7 +24,22 @@ html[data-theme="light"] .noise-overlay { opacity: 0.02; }
   background: radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.15), transparent 50%),
               radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.15), transparent 50%),
               var(--bg);
-  backdrop-filter: blur(20px);
+}
+
+.doodle-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  color: var(--text-4); /* SVG elements will inherit this as currentColor */
+  opacity: 0.12; /* Subtle enough for dark mode */
+}
+
+html[data-theme="light"] .doodle-bg {
+  color: var(--text-3); /* Darker color for light mode */
+  opacity: 0.08; /* Slightly stronger visibility for light mode */
 }
 
 .login-view[hidden] { display: none; }
@@ -75,9 +90,7 @@ body.auth-pending {
   font-family: var(--font-body);
   font-size: 28px;
   font-weight: 800;
-  background: linear-gradient(135deg, #fff, var(--gold-3));
-  -webkit-background-clip: text;
-  color: transparent;
+  color: var(--gold-2);
   letter-spacing: -0.02em;
 }
 

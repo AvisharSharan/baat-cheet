@@ -55,4 +55,5 @@ var loginBtn           = document.querySelector("#loginBtn");
 var loginError         = document.querySelector("#loginError");
 var userChip           = document.querySelector("#userChip");
 var logoutBtn          = document.querySelector("#logoutBtn");
-
+var sidebarToggleBtn   = document.querySelector("#sidebarToggleBtn");
+var workspace          = document.querySelector(".workspace");

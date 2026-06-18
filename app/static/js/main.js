@@ -1,4 +1,7 @@
 // Init
+if (window.innerWidth <= 768) {
+  workspace.classList.add("collapsed");
+}
 modeBtns.forEach(btn => btn.addEventListener("click", () => setWorkflowMode(btn.dataset.mode)));
 recordedFile.addEventListener("change", onFileChange);
 liveCaptionsToggle.addEventListener("change", updateLiveCaptionPreference);
@@ -15,6 +18,7 @@ historyTabBtn.addEventListener("click", showHistory);
 refreshHistoryBtn.addEventListener("click", loadHistory);
 loginForm.addEventListener("submit", login);
 logoutBtn.addEventListener("click", logout);
+sidebarToggleBtn.addEventListener("click", () => workspace.classList.toggle("collapsed"));
 
 // File drag-and-drop
 fileDropZone.addEventListener("dragover", (e) => { e.preventDefault(); fileDropZone.classList.add("drag-over"); });

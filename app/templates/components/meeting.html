@@ -1,5 +1,10 @@
           <!-- Meeting view -->
-          <div id="meetingView" class="meeting-view">
+          <div id="meetingView" class="meeting-view show-transcript">
+            <!-- Mobile Tabs -->
+            <div class="mobile-tabs">
+              <button class="mobile-tab active" data-target="transcript" type="button" onclick="switchMobileTab('transcript')">Transcript</button>
+              <button class="mobile-tab" data-target="minutes" type="button" onclick="switchMobileTab('minutes')">Draft Minutes</button>
+            </div>
             <!-- Transcript panel -->
             <div class="panel panel-transcript">
               <div class="panel-head">

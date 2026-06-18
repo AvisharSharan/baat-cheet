@@ -156,5 +156,14 @@ function emptyTranscriptMessage() {
 
 function refreshEmptyTranscriptMessage() {
   const msg = document.querySelector("#emptyTranscriptMsg");
-  if (msg) msg.textContent = emptyTranscriptMessage();
 }
+
+window.switchMobileTab = function(target) {
+  const mv = document.getElementById("meetingView");
+  if(mv) {
+    mv.className = "meeting-view show-" + target;
+  }
+  document.querySelectorAll(".mobile-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.target === target);
+  });
+};

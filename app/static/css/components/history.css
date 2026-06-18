@@ -152,42 +152,4 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg-5); border-radius: 2px; }
 
-/* ═══════════════════════════════════════════════
-   RESPONSIVE
-═══════════════════════════════════════════════ */
-@media (max-width: 1100px) {
-  .meeting-view {
-    grid-template-columns: 1fr;
-  }
-  .panel {
-    height: 68vh;
-    min-height: 460px;
-  }
-  .panel-history {
-    height: 80vh;
-    max-height: 80vh;
-  }
-}
 
-@media (max-width: 860px) {
-  .login-view { padding: 14px; }
-  .login-shell {
-    width: min(430px, 100%);
-  }
-  .login-panel { padding: 26px; }
-  .workspace { grid-template-columns: 1fr; }
-  .sidebar { position: static; }
-  .topnav { display: none; }
-  .topbar { border-radius: var(--r); }
-}
-
-@media (max-width: 560px) {
-  .login-panel {
-    gap: 16px;
-    padding: 22px;
-  }
-  .login-heading h2 { font-size: 23px; }
-  .shell { width: calc(100vw - 20px); padding: 12px 0 32px; }
-  .topbar { flex-wrap: wrap; gap: 10px; }
-  h1 { font-size: 18px; }
-}

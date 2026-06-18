@@ -2,21 +2,21 @@
    TOKENS (Premium Glassmorphism Vibe)
 ═══════════════════════════════════════════════ */
 :root {
-  /* Dark theme (Deep, rich gradients and glass) */
-  --bg:        #050505;
-  --bg-2:      rgba(15, 15, 15, 0.6);
-  --bg-3:      rgba(25, 25, 25, 0.65);
-  --bg-4:      rgba(38, 38, 38, 0.7);
-  --bg-5:      rgba(51, 51, 51, 0.75);
+  /* Dark theme (Professional Onyx/Obsidian) */
+  --bg:        #0a0a0a;
+  --bg-2:      rgba(23, 23, 23, 0.6);
+  --bg-3:      rgba(38, 38, 38, 0.65);
+  --bg-4:      rgba(51, 51, 51, 0.7);
+  --bg-5:      rgba(64, 64, 64, 0.75);
   
-  --border:    rgba(255, 255, 255, 0.06);
-  --border-2:  rgba(255, 255, 255, 0.1);
-  --border-3:  rgba(255, 255, 255, 0.15);
+  --border:    rgba(255, 255, 255, 0.05);
+  --border-2:  rgba(255, 255, 255, 0.08);
+  --border-3:  rgba(255, 255, 255, 0.12);
   
-  --text:      #ffffff;
-  --text-2:    #c4c4c4;
-  --text-3:    #8f8f8f;
-  --text-4:    #666666;
+  --text:      #ededed;
+  --text-2:    #a3a3a3;
+  --text-3:    #737373;
+  --text-4:    #525252;
 
   /* Primary Accent: Vibrant Cosmic Blue/Purple */
   --gold:      #6366f1; /* Indigo */
