@@ -181,8 +181,7 @@ def build_mom_prompt(
 {mom_type_instruction}
 
 Generate a Minutes of Meeting document using exactly the Markdown structure below.
-Emit every heading even if a section has no content; in that case write a single
-bullet "- Not stated" under it.
+Emit every heading even if a section has no content; in that case write a single bullet "- Not stated" under it.
 
 ---
 
@@ -212,6 +211,7 @@ Rules for Action Items:
 - Replace the example row above with real rows.
 - Every action item must be a table row that starts and ends with "|".
 - Do not write bullets, numbered lists, or plain sentences below the table.
+- Owner and Due Date are "Not stated" if not explicit.
 - If there are no action items, keep exactly one row with "Not stated" values.
 
 ## Risks and Blockers
