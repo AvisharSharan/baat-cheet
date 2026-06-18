@@ -12,7 +12,9 @@
 }
 html[data-theme="light"] .noise-overlay { opacity: 0.02; }
 
-/* AUTH */
+/* ═══════════════════════════════════════════════
+   LOGIN VIEW
+═══════════════════════════════════════════════ */
 .login-view {
   position: fixed;
   inset: 0;
@@ -33,13 +35,13 @@ html[data-theme="light"] .noise-overlay { opacity: 0.02; }
   height: 100%;
   z-index: -1;
   pointer-events: none;
-  color: var(--text-4); /* SVG elements will inherit this as currentColor */
-  opacity: 0.12; /* Subtle enough for dark mode */
+  color: var(--text-4);
+  opacity: 0.12;
 }
 
 html[data-theme="light"] .doodle-bg {
-  color: var(--text-3); /* Darker color for light mode */
-  opacity: 0.08; /* Slightly stronger visibility for light mode */
+  color: var(--text-3);
+  opacity: 0.08;
 }
 
 .login-view[hidden] { display: none; }
@@ -54,15 +56,18 @@ body.auth-pending {
   overflow: hidden;
 }
 
-.login-shell {
-  width: min(400px, 100%);
-  display: block;
-  overflow: hidden;
+/* ═══════════════════════════════════════════════
+   LOGIN CARD (Two-Column Split)
+═══════════════════════════════════════════════ */
+.login-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(880px, 100%);
   border: 1px solid var(--border-3);
   border-radius: var(--r-lg);
   background: var(--bg-2);
-  backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow);
+  overflow: hidden;
   animation: floatUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -71,27 +76,157 @@ body.auth-pending {
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ═══════════════════════════════════════════════
+   LEFT: HERO SIDE
+═══════════════════════════════════════════════ */
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 40px;
+  background: linear-gradient(160deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.08) 50%, transparent 100%);
+  border-right: 1px solid var(--border-2);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle animated accent orb behind the hero content */
+.login-hero::before {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--gold-dim) 0%, transparent 70%);
+  top: -40px;
+  right: -60px;
+  animation: orbFloat 8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes orbFloat {
+  0%   { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  100% { transform: translate(-20px, 30px) scale(1.15); opacity: 1; }
+}
+
+.login-hero-content {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.login-logo {
+  font-family: var(--font-body);
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--gold-2);
+  letter-spacing: -0.02em;
+}
+
+.login-tagline {
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-2);
+  line-height: 1.5;
+  max-width: 300px;
+}
+
+/* Feature List */
+.login-features {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.login-feature {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  animation: featureSlideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.login-feature:nth-child(1) { animation-delay: 0.15s; }
+.login-feature:nth-child(2) { animation-delay: 0.25s; }
+.login-feature:nth-child(3) { animation-delay: 0.35s; }
+
+@keyframes featureSlideIn {
+  0% { opacity: 0; transform: translateX(-12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+.login-feature-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--gold-dim);
+  color: var(--gold-3);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+}
+
+.login-feature-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.login-feature div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.login-feature strong {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-feature span {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.login-hero-footer {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-4);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 32px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   RIGHT: FORM SIDE
+═══════════════════════════════════════════════ */
+.login-form-side {
+  display: grid;
+  place-items: center;
+  padding: 48px 40px;
+}
+
 .login-panel {
   display: grid;
   align-content: center;
   gap: 24px;
+  width: 100%;
+  max-width: 340px;
   min-width: 0;
-  padding: clamp(32px, 5vw, 40px);
   background: transparent;
-}
-
-.login-brand-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.login-brand-row h1 {
-  font-family: var(--font-body);
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--gold-2);
-  letter-spacing: -0.02em;
 }
 
 .login-heading {
@@ -188,6 +323,9 @@ body.auth-pending {
   40%, 60% { transform: translate3d(4px, 0, 0); }
 }
 
+/* ═══════════════════════════════════════════════
+   USER CHIP (topbar)
+═══════════════════════════════════════════════ */
 .user-chip {
   min-height: 32px;
   display: inline-flex;
@@ -197,7 +335,6 @@ body.auth-pending {
   border-radius: 999px;
   color: var(--text-2);
   background: var(--bg-3);
-  backdrop-filter: var(--glass-blur);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
@@ -209,3 +346,41 @@ body.auth-pending {
   color: var(--text);
 }
 
+/* ═══════════════════════════════════════════════
+   MOBILE: Stack to single column
+═══════════════════════════════════════════════ */
+@media (max-width: 700px) {
+  .login-card {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero {
+    padding: 32px 28px 24px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-2);
+  }
+
+  .login-hero-content {
+    gap: 16px;
+  }
+
+  .login-logo {
+    font-size: 28px;
+  }
+
+  .login-tagline {
+    font-size: 15px;
+  }
+
+  .login-features {
+    display: none; /* Hide features on mobile to keep it compact */
+  }
+
+  .login-hero-footer {
+    margin-top: 16px;
+  }
+
+  .login-form-side {
+    padding: 28px;
+  }
+}
