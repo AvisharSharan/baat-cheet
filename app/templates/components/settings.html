@@ -59,6 +59,15 @@
           <!-- Transcription Tab -->
           <div class="settings-section" data-section="transcription" hidden>
             <div class="setting-group">
+              <label class="setting-label" data-i18n="set.trans_provider">Transcription Engine</label>
+              <select id="settTranscriptionProvider" class="setting-select">
+                <option value="local">faster-whisper</option>
+                <option value="indic-conformer">AI4Bharat Indic Conformer</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.trans_provider_hint">Use Indic Conformer for Indian-language recordings</span>
+            </div>
+
+            <div class="setting-group">
               <label class="setting-label" data-i18n="set.w_model">Whisper Model</label>
               <select id="settWhisperModel" class="setting-select">
                 <option value="tiny">tiny</option>
@@ -88,6 +97,59 @@
                 <option value="small">small</option>
               </select>
               <span class="setting-hint" data-i18n="set.w_live_hint">Model used for live caption preview during recording</span>
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label" data-i18n="set.indic_model">Indic Conformer Model</label>
+              <input id="settIndicConformerModel" type="text" class="setting-input" placeholder="ai4bharat/indic-conformer-600m-multilingual" />
+              <span class="setting-hint" data-i18n="set.indic_model_hint">Requires accepting the gated Hugging Face model terms and setting HF_TOKEN</span>
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label" data-i18n="set.indic_lang">Indic Language</label>
+              <select id="settIndicConformerLanguage" class="setting-select">
+                <option value="hi">Hindi (hi)</option>
+                <option value="as">Assamese (as)</option>
+                <option value="bn">Bengali (bn)</option>
+                <option value="brx">Bodo (brx)</option>
+                <option value="doi">Dogri (doi)</option>
+                <option value="gu">Gujarati (gu)</option>
+                <option value="kn">Kannada (kn)</option>
+                <option value="kok">Konkani (kok)</option>
+                <option value="ks">Kashmiri (ks)</option>
+                <option value="mai">Maithili (mai)</option>
+                <option value="ml">Malayalam (ml)</option>
+                <option value="mni">Manipuri (mni)</option>
+                <option value="mr">Marathi (mr)</option>
+                <option value="ne">Nepali (ne)</option>
+                <option value="or">Odia (or)</option>
+                <option value="pa">Punjabi (pa)</option>
+                <option value="sa">Sanskrit (sa)</option>
+                <option value="sat">Santali (sat)</option>
+                <option value="sd">Sindhi (sd)</option>
+                <option value="ta">Tamil (ta)</option>
+                <option value="te">Telugu (te)</option>
+                <option value="ur">Urdu (ur)</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.indic_lang_hint">Language code passed to the Indic Conformer model</span>
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label" data-i18n="set.indic_decoder">Indic Decoder</label>
+              <select id="settIndicConformerDecoder" class="setting-select">
+                <option value="ctc">CTC</option>
+                <option value="rnnt">RNNT</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.indic_decoder_hint">CTC is the simpler default; RNNT is also supported by the model</span>
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label" data-i18n="set.indic_device">Indic Device</label>
+              <select id="settIndicConformerDevice" class="setting-select">
+                <option value="cuda">CUDA (GPU)</option>
+                <option value="cpu">CPU</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.indic_device_hint">600M parameters; GPU is recommended</span>
             </div>
 
             <div class="setting-group">

@@ -41,10 +41,15 @@ async function loadAppSettings() {
     document.getElementById("settNumCtx").value = s.ollama_num_ctx || "";
     document.getElementById("settNumGpu").value = s.ollama_num_gpu || "";
 
-    // Whisper / transcription
+    // Speech-to-text / transcription
+    _setSelect("settTranscriptionProvider", s.transcription_provider);
     _setSelect("settWhisperModel", s.whisper_model);
     _setSelect("settWhisperDevice", s.whisper_device);
     _setSelect("settLiveWhisperModel", s.live_whisper_model);
+    document.getElementById("settIndicConformerModel").value = s.indic_conformer_model || "";
+    _setSelect("settIndicConformerLanguage", s.indic_conformer_language);
+    _setSelect("settIndicConformerDecoder", s.indic_conformer_decoder);
+    _setSelect("settIndicConformerDevice", s.indic_conformer_device);
     _setSelect("settDiarization", s.diarization_provider);
     _setSelect("settVoiceprinting", s.voiceprinting_enabled);
 
@@ -112,9 +117,14 @@ async function saveAppSettings() {
       mom_max_tokens: document.getElementById("settMaxTokens").value.trim(),
       ollama_num_ctx: document.getElementById("settNumCtx").value.trim(),
       ollama_num_gpu: document.getElementById("settNumGpu").value.trim(),
+      transcription_provider: document.getElementById("settTranscriptionProvider").value,
       whisper_model: document.getElementById("settWhisperModel").value,
       whisper_device: document.getElementById("settWhisperDevice").value,
       live_whisper_model: document.getElementById("settLiveWhisperModel").value,
+      indic_conformer_model: document.getElementById("settIndicConformerModel").value.trim(),
+      indic_conformer_language: document.getElementById("settIndicConformerLanguage").value,
+      indic_conformer_decoder: document.getElementById("settIndicConformerDecoder").value,
+      indic_conformer_device: document.getElementById("settIndicConformerDevice").value,
       diarization_provider: document.getElementById("settDiarization").value,
       voiceprinting_enabled: document.getElementById("settVoiceprinting").value,
     };
