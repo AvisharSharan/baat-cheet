@@ -580,7 +580,7 @@ function setStatus(text) {
 }
 
 function statusLabel(data) {
-  if (data.error) return `${data.status}: ${data.error}`;
+  if (data.error) return `${data.status}: ${shortStatusError(data.error)}`;
   if (data.status === "uploaded") return "Uploaded";
   if (data.status === "transcribing") return "Transcribing locally";
   if (data.status === "transcribed" && data.voiceprint_status === "processing") return "Matching saved speaker profiles";
@@ -589,6 +589,11 @@ function statusLabel(data) {
   if (data.status === "ready") return "Minutes ready";
   if (data.status === "canceled") return "Canceled";
   return data.status;
+}
+
+function shortStatusError(error) {
+  const text = String(error || "").replace(/\s+/g, " ").trim();
+  return text.length > 180 ? `${text.slice(0, 180).trim()}...` : text;
 }
 
 function resetSessionOutput() {

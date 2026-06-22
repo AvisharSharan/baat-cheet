@@ -323,7 +323,7 @@ async def generate_mom_for_meeting(meeting_id: str, mom_type: str = "auto") -> N
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.completed_at = datetime.now(timezone.utc)
-        meeting.error = str(exc)
+        meeting.error = _short_error(exc)
     finally:
         _finish_meeting_task(meeting_id)
         _safe_update_meeting(meeting)
@@ -426,7 +426,7 @@ async def transcribe_meeting(meeting_id: str) -> None:
     except Exception as exc:
         meeting.status = MeetingStatus.FAILED
         meeting.completed_at = datetime.now(timezone.utc)
-        meeting.error = str(exc)
+        meeting.error = _short_error(exc)
     finally:
         delete_temp_file(meeting.audio_path)
         meeting.audio_path = None
@@ -439,6 +439,13 @@ def _start_meeting_task(meeting_id: str, coro: Coroutine[Any, Any, None]) -> Non
     task = asyncio.create_task(coro)
     task.add_done_callback(_consume_task_result)
     running_tasks[meeting_id] = task
+
+
+def _short_error(exc: Exception, limit: int = 600) -> str:
+    message = " ".join(str(exc).split())
+    if len(message) <= limit:
+        return message
+    return f"{message[:limit].rstrip()}..."
 
 
 def _cancel_running_task(meeting_id: str) -> None:
