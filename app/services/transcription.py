@@ -33,14 +33,45 @@ class TranscriptionClient(Protocol):
 
 _PYANNOTE_PIPELINE_CACHE: Dict[str, Any] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
+_INDIC_CONFORMER_MODEL_CACHE: Dict[str, Any] = {}
 _WHISPER_MODEL_LOCK = RLock()
+_INDIC_CONFORMER_MODEL_LOCK = RLock()
+_INDIC_CONFORMER_LANGUAGES = {
+    "as",
+    "bn",
+    "brx",
+    "doi",
+    "gu",
+    "hi",
+    "kn",
+    "kok",
+    "ks",
+    "mai",
+    "ml",
+    "mni",
+    "mr",
+    "ne",
+    "or",
+    "pa",
+    "sa",
+    "sat",
+    "sd",
+    "ta",
+    "te",
+    "ur",
+}
 
 
 def create_transcription_client(provider: str | None = None) -> TranscriptionClient:
     selected = (provider or os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
     if selected in {"local", "open_source", "open-source", "faster_whisper", "faster-whisper"}:
         return FasterWhisperPyannoteTranscriptionClient()
-    raise TranscriptionError(f"Unsupported transcription provider: {selected}. Use TRANSCRIPTION_PROVIDER=local.")
+    if selected in {"indic", "indic_conformer", "indic-conformer", "ai4bharat"}:
+        return IndicConformerPyannoteTranscriptionClient()
+    raise TranscriptionError(
+        "Unsupported transcription provider: "
+        f"{selected}. Use TRANSCRIPTION_PROVIDER=local or TRANSCRIPTION_PROVIDER=indic-conformer."
+    )
 
 
 class FasterWhisperPyannoteTranscriptionClient:
@@ -184,6 +215,187 @@ class FasterWhisperPyannoteTranscriptionClient:
         if not diarization:
             raise TranscriptionError("pyannote diarization did not return any speaker segments.")
         return diarization
+
+
+class IndicConformerPyannoteTranscriptionClient(FasterWhisperPyannoteTranscriptionClient):
+    def __init__(
+        self,
+        *,
+        model_name: str | None = None,
+        language: str | None = None,
+        decoder: str | None = None,
+        device: str | None = None,
+        hf_token: str | None = None,
+    ) -> None:
+        super().__init__(hf_token=hf_token)
+        self.model_name = model_name or os.getenv("INDIC_CONFORMER_MODEL", "ai4bharat/indic-conformer-600m-multilingual")
+        self.language = (language or os.getenv("INDIC_CONFORMER_LANGUAGE", "hi")).strip().lower()
+        self.decoder = (decoder or os.getenv("INDIC_CONFORMER_DECODER", "ctc")).strip().lower()
+        self.device = (device or os.getenv("INDIC_CONFORMER_DEVICE", "cpu")).strip().lower()
+
+    async def transcribe(
+        self,
+        audio_path: str,
+        num_speakers: int | None = None,
+        speaker_labels_enabled: bool = True,
+    ) -> List[SpeakerTurn]:
+        try:
+            with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+                wav_path = Path(handle.name)
+
+            await asyncio.to_thread(_decode_audio_for_local_processing, audio_path, str(wav_path))
+            text, duration_ms = await asyncio.to_thread(self._transcribe_wav_text, str(wav_path))
+
+            if not speaker_labels_enabled:
+                return [SpeakerTurn(speaker="", text=text, start_ms=0, end_ms=duration_ms)]
+
+            diarization_enabled = (
+                num_speakers != 1
+                and os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}
+            )
+            if not diarization_enabled:
+                return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
+
+            try:
+                diarization = await asyncio.to_thread(self._diarize_with_pyannote, str(wav_path), num_speakers)
+            except Exception:
+                logger.warning("Indic Conformer transcription succeeded, but diarization failed; returning plain transcript.", exc_info=True)
+                return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
+
+            return _assign_text_to_diarization(text, diarization, duration_ms)
+        finally:
+            if "wav_path" in locals():
+                _unlink_with_retry(wav_path)
+
+    def _transcribe_wav_text(self, wav_path: str) -> tuple[str, int | None]:
+        duration_ms = _wav_duration_ms(wav_path)
+        text = _transcribe_with_indic_conformer(
+            wav_path,
+            self.model_name,
+            self.language,
+            self.decoder,
+            self.device,
+            self.hf_token,
+        )
+        text = text.strip()
+        if not text:
+            raise TranscriptionError("Indic Conformer did not return transcript text.")
+        return text, duration_ms
+
+
+def _transcribe_with_indic_conformer(
+    audio_path: str,
+    model_name: str,
+    language: str,
+    decoder: str,
+    device: str,
+    hf_token: str | None,
+) -> str:
+    if decoder not in {"ctc", "rnnt"}:
+        raise TranscriptionError("INDIC_CONFORMER_DECODER must be either 'ctc' or 'rnnt'.")
+    if language not in _INDIC_CONFORMER_LANGUAGES:
+        raise TranscriptionError(
+            f"Unsupported INDIC_CONFORMER_LANGUAGE '{language}'. "
+            f"Use one of: {', '.join(sorted(_INDIC_CONFORMER_LANGUAGES))}."
+        )
+
+    try:
+        import torch
+        import torchaudio
+    except ImportError as exc:
+        raise TranscriptionError(
+            "Indic Conformer requires torch and torchaudio. Install the open-source speech requirements."
+        ) from exc
+
+    model = _get_indic_conformer_model(model_name, device, hf_token)
+    waveform, sample_rate = torchaudio.load(audio_path)
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if int(sample_rate) != 16000:
+        waveform = torchaudio.functional.resample(waveform, int(sample_rate), 16000)
+
+    model_device = _torch_device(device)
+    if model_device is not None:
+        waveform = waveform.to(model_device)
+
+    try:
+        with torch.inference_mode():
+            output = model(waveform, language, decoder)
+    except Exception as exc:
+        if device != "cpu":
+            logger.warning("Indic Conformer failed on %s; retrying on CPU.", device, exc_info=True)
+            model = _get_indic_conformer_model(model_name, "cpu", hf_token)
+            with torch.inference_mode():
+                output = model(waveform.cpu(), language, decoder)
+        else:
+            raise
+    return _normalize_indic_conformer_output(output)
+
+
+def _get_indic_conformer_model(model_name: str, device: str, hf_token: str | None) -> Any:
+    cache_key = f"{model_name}|{device}|{hf_token or ''}"
+    with _INDIC_CONFORMER_MODEL_LOCK:
+        if cache_key in _INDIC_CONFORMER_MODEL_CACHE:
+            return _INDIC_CONFORMER_MODEL_CACHE[cache_key]
+
+        try:
+            import torch
+            from transformers import AutoModel
+        except ImportError as exc:
+            raise TranscriptionError(
+                "Indic Conformer requires transformers, torch, and torchaudio. Install the open-source speech requirements."
+            ) from exc
+
+        kwargs: Dict[str, Any] = {"trust_remote_code": True}
+        if hf_token:
+            kwargs["token"] = hf_token
+
+        try:
+            model = AutoModel.from_pretrained(model_name, **kwargs)
+        except Exception as exc:
+            raise TranscriptionError(
+                f"Could not load Indic Conformer model '{model_name}'. "
+                "Make sure you accepted the gated Hugging Face model terms and set HF_TOKEN."
+            ) from exc
+
+        torch_device = _torch_device(device)
+        if torch_device is not None:
+            try:
+                model.to(torch_device)
+            except Exception as exc:
+                if _is_cuda_runtime_error(exc):
+                    logger.warning("Could not move Indic Conformer to %s; using CPU instead.", device)
+                else:
+                    raise TranscriptionError(f"Could not move Indic Conformer to {device}.") from exc
+        if hasattr(model, "eval"):
+            model.eval()
+        _INDIC_CONFORMER_MODEL_CACHE[cache_key] = model
+        return model
+
+
+def _torch_device(device: str) -> Any:
+    selected = (device or "cpu").strip().lower()
+    if not selected or selected == "cpu":
+        return None
+    try:
+        import torch
+
+        return torch.device(selected)
+    except Exception:
+        return None
+
+
+def _normalize_indic_conformer_output(output: Any) -> str:
+    if isinstance(output, str):
+        return output
+    if isinstance(output, (list, tuple)):
+        return " ".join(_normalize_indic_conformer_output(item) for item in output).strip()
+    if isinstance(output, dict):
+        for key in ("text", "transcription", "transcript"):
+            value = output.get(key)
+            if value:
+                return _normalize_indic_conformer_output(value)
+    return str(output or "").strip()
 
 
 def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
@@ -402,6 +614,21 @@ def _decode_audio_for_local_processing(input_path: str, output_path: str, sample
         raise TranscriptionError(f"Could not decode recording: {detail[-800:]}")
 
 
+def _wav_duration_ms(audio_path: str) -> int | None:
+    try:
+        import wave
+
+        with wave.open(audio_path, "rb") as wav_file:
+            frames = wav_file.getnframes()
+            rate = wav_file.getframerate()
+            if rate <= 0:
+                return None
+            return int(frames * 1000 / rate)
+    except Exception:
+        logger.debug("Could not determine WAV duration for %s.", audio_path, exc_info=True)
+        return None
+
+
 def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
     for attempt in range(attempts):
         try:
@@ -450,6 +677,71 @@ def _assign_speakers_to_segments(
     if not turns:
         raise TranscriptionError("No speaker transcript turns were produced from local transcription.")
     return _merge_adjacent_turns(turns)
+
+
+def _assign_text_to_diarization(
+    text: str,
+    diarization: List[Dict[str, Any]],
+    duration_ms: int | None = None,
+) -> List[SpeakerTurn]:
+    words = text.split()
+    if not words:
+        raise TranscriptionError("No transcript text was produced from Indic Conformer.")
+    if not diarization:
+        return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
+
+    speaker_aliases: Dict[str, str] = {}
+    normalized = _merge_adjacent_diarization_turns(diarization)
+    total_span = sum(max(1, (_first_int(turn, ("end_ms", "end")) or 0) - (_first_int(turn, ("start_ms", "start")) or 0)) for turn in normalized)
+    if total_span <= 0:
+        return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
+
+    turns: List[SpeakerTurn] = []
+    word_index = 0
+    for index, turn in enumerate(normalized):
+        remaining_words = len(words) - word_index
+        if remaining_words <= 0:
+            break
+
+        start_ms = _first_int(turn, ("start_ms", "start"))
+        end_ms = _first_int(turn, ("end_ms", "end"))
+        span = max(1, (end_ms or 0) - (start_ms or 0))
+        if index == len(normalized) - 1:
+            count = remaining_words
+        else:
+            count = max(1, round(len(words) * span / total_span))
+            count = min(count, remaining_words - (len(normalized) - index - 1))
+        if count <= 0:
+            continue
+
+        raw_speaker = str(turn.get("speaker") or "Speaker 1")
+        speaker = _canonical_speaker_label(raw_speaker, speaker_aliases)
+        chunk = " ".join(words[word_index:word_index + count]).strip()
+        word_index += count
+        if chunk:
+            turns.append(SpeakerTurn(speaker=speaker, text=chunk, start_ms=start_ms, end_ms=end_ms))
+
+    if word_index < len(words):
+        tail = " ".join(words[word_index:]).strip()
+        if turns:
+            turns[-1].text = f"{turns[-1].text} {tail}".strip()
+        else:
+            turns.append(SpeakerTurn(speaker="Speaker 1", text=tail, start_ms=0, end_ms=duration_ms))
+
+    return _merge_adjacent_turns(turns)
+
+
+def _merge_adjacent_diarization_turns(diarization: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    for turn in sorted(diarization, key=lambda item: _first_int(item, ("start_ms", "start")) or 0):
+        speaker = str(turn.get("speaker") or "Speaker 1")
+        start_ms = _first_int(turn, ("start_ms", "start"))
+        end_ms = _first_int(turn, ("end_ms", "end"))
+        if merged and str(merged[-1].get("speaker")) == speaker:
+            merged[-1]["end_ms"] = end_ms or merged[-1].get("end_ms")
+        else:
+            merged.append({"speaker": speaker, "start_ms": start_ms, "end_ms": end_ms})
+    return merged
 
 
 def _segments_to_plain_transcript(segments: List[Dict[str, Any]]) -> List[SpeakerTurn]:

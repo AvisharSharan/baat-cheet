@@ -29,10 +29,15 @@ _SCHEMA: Dict[str, tuple[str, str]] = {
     "mom_max_tokens":    ("MOM_MAX_TOKENS",        "1200"),
     "ollama_num_ctx":    ("OLLAMA_NUM_CTX",        "32768"),
     "ollama_num_gpu":    ("OLLAMA_NUM_GPU",        "0"),
-    # Whisper / transcription
+    # Transcription
+    "transcription_provider": ("TRANSCRIPTION_PROVIDER", "local"),
     "whisper_model":     ("FASTER_WHISPER_MODEL",  "base"),
     "whisper_device":    ("FASTER_WHISPER_DEVICE",  "cuda"),
     "live_whisper_model": ("LIVE_WHISPER_MODEL",   "base"),
+    "indic_conformer_model": ("INDIC_CONFORMER_MODEL", "ai4bharat/indic-conformer-600m-multilingual"),
+    "indic_conformer_language": ("INDIC_CONFORMER_LANGUAGE", "hi"),
+    "indic_conformer_decoder": ("INDIC_CONFORMER_DECODER", "ctc"),
+    "indic_conformer_device": ("INDIC_CONFORMER_DEVICE", "cuda"),
     # Diarization
     "diarization_provider": ("DIARIZATION_PROVIDER", "pyannote"),
     # Voiceprinting

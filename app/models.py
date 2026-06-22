@@ -146,9 +146,14 @@ class SettingsResponse(BaseModel):
     mom_max_tokens: str = "1200"
     ollama_num_ctx: str = "32768"
     ollama_num_gpu: str = "0"
+    transcription_provider: str = "local"
     whisper_model: str = "base"
     whisper_device: str = "cuda"
     live_whisper_model: str = "base"
+    indic_conformer_model: str = "ai4bharat/indic-conformer-600m-multilingual"
+    indic_conformer_language: str = "hi"
+    indic_conformer_decoder: str = "ctc"
+    indic_conformer_device: str = "cuda"
     diarization_provider: str = "pyannote"
     voiceprinting_enabled: str = "1"
 
@@ -159,9 +164,14 @@ class SettingsUpdateRequest(BaseModel):
     mom_max_tokens: Optional[str] = None
     ollama_num_ctx: Optional[str] = None
     ollama_num_gpu: Optional[str] = None
+    transcription_provider: Optional[str] = None
     whisper_model: Optional[str] = None
     whisper_device: Optional[str] = None
     live_whisper_model: Optional[str] = None
+    indic_conformer_model: Optional[str] = None
+    indic_conformer_language: Optional[str] = None
+    indic_conformer_decoder: Optional[str] = None
+    indic_conformer_device: Optional[str] = None
     diarization_provider: Optional[str] = None
     voiceprinting_enabled: Optional[str] = None
 
