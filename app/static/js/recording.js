@@ -158,8 +158,7 @@ async function uploadRecordedFile() {
 function inferredSpeakerCount() {
   const selected = Number(speakerCount.value);
   if (Number.isInteger(selected) && selected >= 1) return selected;
-  const microphoneOnly = workflowMode.value !== "recorded" && captureMode.value === "microphone";
-  return microphoneOnly && speakerLabelsToggle.checked ? 2 : NaN;
+  return speakerLabelsToggle.checked ? 1 : NaN;
 }
 
 async function uploadMeetingFile(file, filename) {

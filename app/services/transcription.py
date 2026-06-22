@@ -262,7 +262,7 @@ class IndicConformerPyannoteTranscriptionClient(FasterWhisperPyannoteTranscripti
                 logger.warning("Indic Conformer transcription succeeded, but diarization failed; returning plain transcript.", exc_info=True)
                 return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
 
-            return _assign_text_to_diarization(text, diarization, duration_ms)
+            return _assign_text_to_diarization(text, diarization, duration_ms, expected_speakers=num_speakers)
         finally:
             if "wav_path" in locals():
                 _unlink_with_retry(wav_path)
@@ -387,15 +387,30 @@ def _torch_device(device: str) -> Any:
 
 def _normalize_indic_conformer_output(output: Any) -> str:
     if isinstance(output, str):
-        return output
+        return _clean_indic_conformer_text(output)
     if isinstance(output, (list, tuple)):
-        return " ".join(_normalize_indic_conformer_output(item) for item in output).strip()
+        text_parts = [
+            _normalize_indic_conformer_output(item)
+            for item in output
+            if isinstance(item, (str, list, tuple, dict))
+            or any(hasattr(item, attr) for attr in ("text", "transcription", "transcript", "pred_text", "prediction"))
+        ]
+        return " ".join(part for part in text_parts if part).strip()
     if isinstance(output, dict):
-        for key in ("text", "transcription", "transcript"):
+        for key in ("text", "transcription", "transcript", "pred_text", "prediction"):
             value = output.get(key)
             if value:
                 return _normalize_indic_conformer_output(value)
-    return str(output or "").strip()
+        return ""
+    for attr in ("text", "transcription", "transcript", "pred_text", "prediction"):
+        value = getattr(output, attr, None)
+        if value:
+            return _normalize_indic_conformer_output(value)
+    raise TranscriptionError(f"Unexpected Indic Conformer output type: {type(output).__name__}.")
+
+
+def _clean_indic_conformer_text(text: str) -> str:
+    return " ".join(text.replace("\u2581", " ").replace("\u00e2\u20ac\u2018", " ").split())
 
 
 def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
@@ -683,6 +698,7 @@ def _assign_text_to_diarization(
     text: str,
     diarization: List[Dict[str, Any]],
     duration_ms: int | None = None,
+    expected_speakers: int | None = None,
 ) -> List[SpeakerTurn]:
     words = text.split()
     if not words:
@@ -692,6 +708,26 @@ def _assign_text_to_diarization(
 
     speaker_aliases: Dict[str, str] = {}
     normalized = _merge_adjacent_diarization_turns(diarization)
+    unique_speakers = {str(turn.get("speaker") or "Speaker 1") for turn in normalized}
+    logger.info(
+        "Assigning Indic transcript to diarization: expected_speakers=%s detected_speakers=%s diarization_turns=%s",
+        expected_speakers,
+        len(unique_speakers),
+        len(normalized),
+    )
+    if expected_speakers == 1 and len(unique_speakers) <= 1:
+        start_ms = _first_int(normalized[0], ("start_ms", "start")) if normalized else 0
+        end_ms = _first_int(normalized[-1], ("end_ms", "end")) if normalized else duration_ms
+        speaker = _canonical_speaker_label(next(iter(unique_speakers), "Speaker 1"), speaker_aliases)
+        return [SpeakerTurn(speaker=speaker, text=text, start_ms=start_ms or 0, end_ms=end_ms or duration_ms)]
+    if expected_speakers and expected_speakers > 1 and len(unique_speakers) < expected_speakers:
+        logger.warning(
+            "pyannote detected %s speaker(s), fewer than requested %s; splitting Indic transcript approximately.",
+            len(unique_speakers),
+            expected_speakers,
+        )
+        return _split_text_by_expected_speakers(text, expected_speakers, duration_ms)
+
     total_span = sum(max(1, (_first_int(turn, ("end_ms", "end")) or 0) - (_first_int(turn, ("start_ms", "start")) or 0)) for turn in normalized)
     if total_span <= 0:
         return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
@@ -729,6 +765,31 @@ def _assign_text_to_diarization(
             turns.append(SpeakerTurn(speaker="Speaker 1", text=tail, start_ms=0, end_ms=duration_ms))
 
     return _merge_adjacent_turns(turns)
+
+
+def _split_text_by_expected_speakers(
+    text: str,
+    expected_speakers: int,
+    duration_ms: int | None = None,
+) -> List[SpeakerTurn]:
+    words = text.split()
+    if not words:
+        raise TranscriptionError("No transcript text was produced from Indic Conformer.")
+    speaker_count = max(1, min(expected_speakers, len(words)))
+    turns: List[SpeakerTurn] = []
+    word_index = 0
+    for index in range(speaker_count):
+        remaining_words = len(words) - word_index
+        remaining_speakers = speaker_count - index
+        count = max(1, round(remaining_words / remaining_speakers))
+        chunk = " ".join(words[word_index:word_index + count]).strip()
+        word_index += count
+        if not chunk:
+            continue
+        start_ms = int((duration_ms or 0) * index / speaker_count) if duration_ms else None
+        end_ms = int((duration_ms or 0) * (index + 1) / speaker_count) if duration_ms else None
+        turns.append(SpeakerTurn(speaker=f"Speaker {index + 1}", text=chunk, start_ms=start_ms, end_ms=end_ms))
+    return turns
 
 
 def _merge_adjacent_diarization_turns(diarization: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

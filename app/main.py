@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, change_password, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
-from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SettingsResponse, SettingsUpdateRequest, SpeakerUpdate, TranscriptUpdate
+from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SettingsResponse, SettingsUpdateRequest, SpeakerTurn, SpeakerUpdate, TranscriptUpdate
 from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
@@ -27,6 +27,7 @@ from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
 
 load_dotenv()
+load_settings()
 
 app = FastAPI(title="Minutes-of-Meeting Tool")
 store = MeetingStore()
@@ -373,6 +374,8 @@ async def transcribe_meeting(meeting_id: str) -> None:
             num_speakers=meeting.num_speakers,
             speaker_labels_enabled=meeting.speaker_labels_enabled,
         )
+        if meeting.num_speakers == 1:
+            meeting.transcript = _collapse_to_single_speaker_turn(meeting.transcript)
         speakers = sorted({turn.speaker for turn in meeting.transcript})
         meeting.speaker_names = {speaker: speaker for speaker in speakers if speaker} if meeting.speaker_labels_enabled else {}
         meeting.status = MeetingStatus.TRANSCRIBED
@@ -432,6 +435,15 @@ async def transcribe_meeting(meeting_id: str) -> None:
         meeting.audio_path = None
         _finish_meeting_task(meeting_id)
         _safe_update_meeting(meeting)
+
+
+def _collapse_to_single_speaker_turn(transcript: list[SpeakerTurn]) -> list[SpeakerTurn]:
+    text = " ".join(turn.text.strip() for turn in transcript if turn.text and turn.text.strip()).strip()
+    if not text:
+        return transcript
+    start_ms = next((turn.start_ms for turn in transcript if turn.start_ms is not None), None)
+    end_ms = next((turn.end_ms for turn in reversed(transcript) if turn.end_ms is not None), None)
+    return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=start_ms, end_ms=end_ms)]
 
 
 def _start_meeting_task(meeting_id: str, coro: Coroutine[Any, Any, None]) -> None:

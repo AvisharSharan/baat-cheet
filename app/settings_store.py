@@ -65,13 +65,12 @@ def _write_file(data: Dict[str, str]) -> None:
 
 
 def load_settings() -> Dict[str, Any]:
-    """Return the full settings dict, merging saved values with env/defaults."""
+    """Return settings and mirror resolved values into ``os.environ``."""
     with _lock:
         saved = _read_file()
-    result: Dict[str, Any] = {}
-    for key, (env_var, default) in _SCHEMA.items():
-        result[key] = saved.get(key) or os.getenv(env_var, default)
-    return result
+        result = _resolve_settings(saved)
+        _apply_to_environment(result)
+        return result
 
 
 def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -86,3 +85,17 @@ def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
             os.environ[env_var] = str(value)
         _write_file(current)
     return load_settings()
+
+
+def _resolve_settings(saved: Dict[str, str]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, (env_var, default) in _SCHEMA.items():
+        result[key] = saved.get(key) or os.getenv(env_var, default)
+    return result
+
+
+def _apply_to_environment(settings: Dict[str, Any]) -> None:
+    for key, value in settings.items():
+        if key not in _SCHEMA:
+            continue
+        os.environ[_SCHEMA[key][0]] = str(value)
