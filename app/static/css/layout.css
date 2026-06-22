@@ -1078,12 +1078,5 @@ body[data-state="recording"] .record-dot {
     display: none;
   }
   
-  /* Login Adjustments */
-  .login-panel {
-    padding: 24px;
-  }
-  .login-brand-row h1 {
-    font-size: 24px;
-  }
 }
 
