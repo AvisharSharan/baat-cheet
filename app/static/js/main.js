@@ -17,9 +17,13 @@ document.getElementById("loginThemeToggle").addEventListener("click", toggleThem
 newMeetingBtn.addEventListener("click", startNewMeeting);
 historyTabBtn.addEventListener("click", showHistory);
 refreshHistoryBtn.addEventListener("click", loadHistory);
+deleteAllHistoryBtn.addEventListener("click", deleteAllHistory);
 loginForm.addEventListener("submit", login);
 logoutBtn.addEventListener("click", logout);
 sidebarToggleBtn.addEventListener("click", () => workspace.classList.toggle("collapsed"));
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener("devicechange", refreshAudioInputDevices);
+}
 
 // File drag-and-drop
 fileDropZone.addEventListener("dragover", (e) => { e.preventDefault(); fileDropZone.classList.add("drag-over"); });
@@ -41,4 +45,5 @@ syncLiveCaptionPreference();
 updateWorkflowUI();
 meetingName.value = defaultMeetingName();
 bootstrapAuth();
+refreshAudioInputDevices();
 

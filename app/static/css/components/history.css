@@ -23,6 +23,18 @@
   gap: 8px;
 }
 
+.history-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-danger-soft:hover {
+  border-color: color-mix(in srgb, #ff5a5f 45%, var(--border));
+  background: color-mix(in srgb, #ff5a5f 12%, transparent);
+  color: #ff5a5f;
+}
+
 .history-item {
   width: 100%;
   flex: 0 0 auto;

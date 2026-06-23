@@ -43,11 +43,23 @@ function clearRecordingPlayback() {
   playbackSection.hidden = true;
 }
 
+function selectedMicrophoneDeviceId() {
+  return microphoneDevice ? microphoneDevice.value : "";
+}
+
+function microphoneAudioConstraints() {
+  const deviceId = selectedMicrophoneDeviceId();
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return audio;
+}
+
 async function createMicrophoneStream() {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: microphoneAudioConstraints(),
   });
   activeStreams = [stream];
+  refreshAudioInputDevices();
   return stream;
 }
 
@@ -59,7 +71,7 @@ async function createMeetingCaptureStream() {
     throw new Error("No meeting audio was shared");
   }
   const micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: microphoneAudioConstraints(),
   });
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   activeAudioContext = new AudioContextClass();
@@ -67,10 +79,39 @@ async function createMeetingCaptureStream() {
   activeAudioContext.createMediaStreamSource(new MediaStream(displayAudioTracks)).connect(destination);
   activeAudioContext.createMediaStreamSource(micStream).connect(destination);
   activeStreams = [displayStream, micStream, destination.stream];
+  refreshAudioInputDevices();
   displayStream.getTracks().forEach((track) => {
     track.onended = () => { if (recorder && recorder.state !== "inactive") stopRecording(); };
   });
   return destination.stream;
+}
+
+async function refreshAudioInputDevices() {
+  if (!microphoneDevice || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  const previousValue = microphoneDevice.value;
+  let devices = [];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch (error) {
+    return;
+  }
+
+  const audioInputs = devices.filter((device) => device.kind === "audioinput");
+  const defaultOption = new Option("Default microphone", "microphone");
+  defaultOption.value = "";
+  microphoneDevice.innerHTML = "";
+  microphoneDevice.append(defaultOption);
+
+  audioInputs
+    .filter((device) => device.deviceId && device.deviceId !== "default")
+    .forEach((device, index) => {
+      const label = device.label || `Microphone ${index + 1}`;
+      microphoneDevice.append(new Option(label, device.deviceId));
+    });
+
+  if ([...microphoneDevice.options].some((option) => option.value === previousValue)) {
+    microphoneDevice.value = previousValue;
+  }
 }
 
 function stopActiveCapture() {

@@ -35,6 +35,7 @@ async function startRecording() {
 function setRecordingState(active) {
   workflowMode.disabled = active;
   captureMode.disabled = active;
+  microphoneDevice.disabled = active;
   liveCaptionsToggle.disabled = active;
   speakerLabelsToggle.disabled = active;
   speakerCount.disabled = active || !speakerLabelsToggle.checked;
@@ -158,7 +159,7 @@ async function uploadRecordedFile() {
 function inferredSpeakerCount() {
   const selected = Number(speakerCount.value);
   if (Number.isInteger(selected) && selected >= 1) return selected;
-  return speakerLabelsToggle.checked ? 1 : NaN;
+  return NaN;
 }
 
 async function uploadMeetingFile(file, filename) {
@@ -312,6 +313,21 @@ async function deleteHistoryMeeting(id, name) {
     meetingName.value = defaultMeetingName();
   }
   setStatus("Meeting deleted");
+  loadHistory();
+}
+
+async function deleteAllHistory() {
+  if (!window.confirm("Delete all meeting history? This cannot be undone.")) return;
+  deleteAllHistoryBtn.disabled = true;
+  const response = await apiFetch("/api/meetings", { method: "DELETE" });
+  deleteAllHistoryBtn.disabled = false;
+  if (!response.ok) {
+    setStatus("Could not delete meeting history");
+    return;
+  }
+  resetSessionOutput();
+  meetingName.value = defaultMeetingName();
+  setStatus("Meeting history deleted");
   loadHistory();
 }
 
@@ -647,6 +663,7 @@ function updateWorkflowUI() {
 
   workflowMode.disabled = Boolean(recording);
   captureMode.disabled = recorded || Boolean(recording);
+  microphoneDevice.disabled = recorded || Boolean(recording);
   liveCaptionsToggle.disabled = recorded || Boolean(recording);
   speakerLabelsToggle.disabled = Boolean(recording);
   speakerCount.disabled = Boolean(recording) || !speakerLabelsEnabled;
@@ -677,6 +694,7 @@ function setUploadBusy(busy) {
   const recorded = workflowMode.value === "recorded";
   workflowMode.disabled = busy || (recorder && recorder.state === "recording");
   captureMode.disabled = busy || recorded;
+  microphoneDevice.disabled = busy || recorded;
   liveCaptionsToggle.disabled = busy || recorded;
   speakerLabelsToggle.disabled = busy;
   speakerCount.disabled = busy || !speakerLabelsToggle.checked;

@@ -2,6 +2,7 @@
 var workflowMode       = document.querySelector("#workflowMode");
 var modeBtns           = document.querySelectorAll(".mode-btn");
 var captureMode        = document.querySelector("#captureMode");
+var microphoneDevice   = document.querySelector("#microphoneDevice");
 var liveCaptionsToggle = document.querySelector("#liveCaptionsToggle");
 var speakerLabelsToggle = document.querySelector("#speakerLabelsToggle");
 var realtimeOnly       = document.querySelector(".realtime-only");
@@ -40,6 +41,7 @@ var meetingName        = document.querySelector("#meetingName");
 var newMeetingBtn      = document.querySelector("#newMeetingBtn");
 var historyTabBtn      = document.querySelector("#historyTabBtn");
 var refreshHistoryBtn  = document.querySelector("#refreshHistoryBtn");
+var deleteAllHistoryBtn = document.querySelector("#deleteAllHistoryBtn");
 var meetingView        = document.querySelector("#meetingView");
 var historyView        = document.querySelector("#historyView");
 var historyList        = document.querySelector("#historyList");
