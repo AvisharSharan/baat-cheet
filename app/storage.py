@@ -52,6 +52,13 @@ class MeetingStore:
             self._save()
             return meeting.model_copy(deep=True)
 
+    def clear(self) -> List[MeetingState]:
+        with self._lock:
+            meetings = [meeting.model_copy(deep=True) for meeting in self._meetings.values()]
+            self._meetings.clear()
+            self._save()
+            return meetings
+
     def list(self) -> List[MeetingState]:
         with self._lock:
             meetings = [

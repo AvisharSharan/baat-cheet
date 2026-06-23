@@ -206,6 +206,15 @@ async def list_meetings(_: CurrentUser = Depends(current_user)) -> list[MeetingH
     return [MeetingHistoryItem.from_state(meeting) for meeting in store.list()]
 
 
+@app.delete("/api/meetings", status_code=204)
+async def delete_all_meetings(_: CurrentUser = Depends(current_user)) -> Response:
+    meetings = store.clear()
+    for meeting in meetings:
+        _cancel_running_task(meeting.id)
+        delete_temp_file(meeting.audio_path)
+    return Response(status_code=204)
+
+
 @app.get("/api/meetings/{meeting_id}/status", response_model=MeetingStatusResponse)
 async def get_status(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
