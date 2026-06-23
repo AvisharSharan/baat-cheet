@@ -8,6 +8,13 @@ function openSettings() {
   fetchOllamaModels();
 }
 
+document.addEventListener("DOMContentLoaded", function() {
+  var engine = document.getElementById("settSpeechEngine");
+  var provider = document.getElementById("settTranscriptionProvider");
+  if (engine) engine.addEventListener("change", updateSpeechSettingsVisibility);
+  if (provider) provider.addEventListener("change", updateSpeechSettingsVisibility);
+});
+
 function closeSettings() {
   document.getElementById("settingsModal").hidden = true;
   // Clear password fields
@@ -42,7 +49,9 @@ async function loadAppSettings() {
     document.getElementById("settNumGpu").value = s.ollama_num_gpu || "";
 
     // Speech-to-text / transcription
-    _setSelect("settTranscriptionProvider", s.transcription_provider);
+    var provider = s.transcription_provider || "local";
+    _setSelect("settSpeechEngine", provider === "sarvam" ? "sarvam" : "open-source");
+    _setSelect("settTranscriptionProvider", provider === "indic-conformer" ? "indic-conformer" : "local");
     _setSelect("settWhisperModel", s.whisper_model);
     _setSelect("settWhisperDevice", s.whisper_device);
     _setSelect("settLiveWhisperModel", s.live_whisper_model);
@@ -50,9 +59,13 @@ async function loadAppSettings() {
     _setSelect("settIndicConformerLanguage", s.indic_conformer_language);
     _setSelect("settIndicConformerDecoder", s.indic_conformer_decoder);
     _setSelect("settIndicConformerDevice", s.indic_conformer_device);
+    document.getElementById("settSarvamModel").value = s.sarvam_stt_model || "";
+    _setSelect("settSarvamMode", s.sarvam_stt_mode);
+    document.getElementById("settSarvamLanguage").value = s.sarvam_language_code || "";
     _setSelect("settDiarization", s.diarization_provider);
     _setSelect("settVoiceprinting", s.voiceprinting_enabled);
-
+    window.currentSpeechEngine = provider === "sarvam" ? "sarvam" : "open-source";
+    updateSpeechSettingsVisibility();
     // Account
     var chip = document.getElementById("userChip");
     document.getElementById("settUsername").value = chip ? chip.textContent.trim() : "admin";
@@ -117,7 +130,7 @@ async function saveAppSettings() {
       mom_max_tokens: document.getElementById("settMaxTokens").value.trim(),
       ollama_num_ctx: document.getElementById("settNumCtx").value.trim(),
       ollama_num_gpu: document.getElementById("settNumGpu").value.trim(),
-      transcription_provider: document.getElementById("settTranscriptionProvider").value,
+      transcription_provider: selectedTranscriptionProvider(),
       whisper_model: document.getElementById("settWhisperModel").value,
       whisper_device: document.getElementById("settWhisperDevice").value,
       live_whisper_model: document.getElementById("settLiveWhisperModel").value,
@@ -125,6 +138,9 @@ async function saveAppSettings() {
       indic_conformer_language: document.getElementById("settIndicConformerLanguage").value,
       indic_conformer_decoder: document.getElementById("settIndicConformerDecoder").value,
       indic_conformer_device: document.getElementById("settIndicConformerDevice").value,
+      sarvam_stt_model: document.getElementById("settSarvamModel").value.trim(),
+      sarvam_stt_mode: document.getElementById("settSarvamMode").value,
+      sarvam_language_code: document.getElementById("settSarvamLanguage").value.trim(),
       diarization_provider: document.getElementById("settDiarization").value,
       voiceprinting_enabled: document.getElementById("settVoiceprinting").value,
     };
@@ -137,6 +153,7 @@ async function saveAppSettings() {
       body: JSON.stringify(body),
     });
     if (!resp.ok) throw new Error("Save failed");
+    window.currentSpeechEngine = document.getElementById("settSpeechEngine").value;
     closeSettings();
   } catch (e) {
     console.error("Failed to save settings", e);
@@ -192,6 +209,26 @@ function _showPwdMsg(text, type) {
   msg.textContent = text;
   msg.className = "setting-msg " + type;
   msg.hidden = false;
+}
+
+function selectedTranscriptionProvider() {
+  var engine = document.getElementById("settSpeechEngine").value;
+  if (engine === "sarvam") return "sarvam";
+  return document.getElementById("settTranscriptionProvider").value || "local";
+}
+
+function updateSpeechSettingsVisibility() {
+  var engineEl = document.getElementById("settSpeechEngine");
+  var providerEl = document.getElementById("settTranscriptionProvider");
+  var engine = engineEl ? engineEl.value : "open-source";
+  var provider = providerEl ? providerEl.value : "local";
+
+  document.querySelectorAll("[data-engine-setting]").forEach(function(group) {
+    group.hidden = group.dataset.engineSetting !== engine;
+  });
+  document.querySelectorAll("[data-open-source-setting]").forEach(function(group) {
+    group.hidden = engine !== "open-source" || group.dataset.openSourceSetting !== provider;
+  });
 }
 
 function _setSelect(id, value) {

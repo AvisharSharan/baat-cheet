@@ -59,15 +59,24 @@
           <!-- Transcription Tab -->
           <div class="settings-section" data-section="transcription" hidden>
             <div class="setting-group">
-              <label class="setting-label" data-i18n="set.trans_provider">Transcription Engine</label>
+              <label class="setting-label" data-i18n="set.speech_engine">Speech Engine</label>
+              <select id="settSpeechEngine" class="setting-select">
+                <option value="open-source">Open source</option>
+                <option value="sarvam">Sarvam</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.speech_engine_hint">Choose who handles transcription and diarization</span>
+            </div>
+
+            <div class="setting-group" data-engine-setting="open-source">
+              <label class="setting-label" data-i18n="set.trans_provider">Open-source Transcriber</label>
               <select id="settTranscriptionProvider" class="setting-select">
                 <option value="local">faster-whisper</option>
                 <option value="indic-conformer">AI4Bharat Indic Conformer</option>
               </select>
-              <span class="setting-hint" data-i18n="set.trans_provider_hint">Use Indic Conformer for Indian-language recordings</span>
+              <span class="setting-hint" data-i18n="set.trans_provider_hint">Used only when Speech Engine is Open source</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="local">
               <label class="setting-label" data-i18n="set.w_model">Whisper Model</label>
               <select id="settWhisperModel" class="setting-select">
                 <option value="tiny">tiny</option>
@@ -80,7 +89,7 @@
               <span class="setting-hint" data-i18n="set.w_model_hint">Larger models are more accurate but slower</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="local">
               <label class="setting-label" data-i18n="set.w_dev">Whisper Device</label>
               <select id="settWhisperDevice" class="setting-select">
                 <option value="cuda">CUDA (GPU)</option>
@@ -89,7 +98,7 @@
               <span class="setting-hint" data-i18n="set.w_dev_hint">Use CUDA for faster transcription if available</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source">
               <label class="setting-label" data-i18n="set.w_live">Live Preview Model</label>
               <select id="settLiveWhisperModel" class="setting-select">
                 <option value="tiny">tiny</option>
@@ -99,13 +108,13 @@
               <span class="setting-hint" data-i18n="set.w_live_hint">Model used for live caption preview during recording</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="indic-conformer">
               <label class="setting-label" data-i18n="set.indic_model">Indic Conformer Model</label>
               <input id="settIndicConformerModel" type="text" class="setting-input" placeholder="ai4bharat/indic-conformer-600m-multilingual" />
               <span class="setting-hint" data-i18n="set.indic_model_hint">Requires accepting the gated Hugging Face model terms and setting HF_TOKEN</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="indic-conformer">
               <label class="setting-label" data-i18n="set.indic_lang">Indic Language</label>
               <select id="settIndicConformerLanguage" class="setting-select">
                 <option value="hi">Hindi (hi)</option>
@@ -134,7 +143,7 @@
               <span class="setting-hint" data-i18n="set.indic_lang_hint">Language code passed to the Indic Conformer model</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="indic-conformer">
               <label class="setting-label" data-i18n="set.indic_decoder">Indic Decoder</label>
               <select id="settIndicConformerDecoder" class="setting-select">
                 <option value="ctc">CTC</option>
@@ -143,7 +152,7 @@
               <span class="setting-hint" data-i18n="set.indic_decoder_hint">CTC is the simpler default; RNNT is also supported by the model</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="open-source" data-open-source-setting="indic-conformer">
               <label class="setting-label" data-i18n="set.indic_device">Indic Device</label>
               <select id="settIndicConformerDevice" class="setting-select">
                 <option value="cuda">CUDA (GPU)</option>
@@ -152,7 +161,31 @@
               <span class="setting-hint" data-i18n="set.indic_device_hint">600M parameters; GPU is recommended</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-engine-setting="sarvam">
+              <label class="setting-label" data-i18n="set.sarvam_model">Sarvam Model</label>
+              <input id="settSarvamModel" type="text" class="setting-input" placeholder="saaras:v3" />
+              <span class="setting-hint" data-i18n="set.sarvam_model_hint">Uses SARVAM_API_KEY from your environment</span>
+            </div>
+
+            <div class="setting-group" data-engine-setting="sarvam">
+              <label class="setting-label" data-i18n="set.sarvam_mode">Sarvam Mode</label>
+              <select id="settSarvamMode" class="setting-select">
+                <option value="transcribe">Transcribe - original script</option>
+                <option value="verbatim">Verbatim - original script</option>
+                <option value="codemix">Codemix - mixed-language text</option>
+                <option value="translate">Translate - English output</option>
+                <option value="translit">Translit - Romanized output</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.sarvam_mode_hint">Use Transcribe with hi-IN for Hindi script output</span>
+            </div>
+
+            <div class="setting-group" data-engine-setting="sarvam">
+              <label class="setting-label" data-i18n="set.sarvam_lang">Sarvam Language</label>
+              <input id="settSarvamLanguage" type="text" class="setting-input" placeholder="hi-IN" />
+              <span class="setting-hint" data-i18n="set.sarvam_lang_hint">Use hi-IN for Hindi script, en-IN for English, or another Sarvam language code</span>
+            </div>
+
+            <div class="setting-group" data-engine-setting="open-source">
               <label class="setting-label" data-i18n="set.diar">Speaker Diarization</label>
               <select id="settDiarization" class="setting-select">
                 <option value="pyannote">pyannote (GPU recommended)</option>

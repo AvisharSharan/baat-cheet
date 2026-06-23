@@ -98,7 +98,10 @@
   scrollbar-width: thin;
 }
 
-.settings-section[hidden] { display: none; }
+.settings-section[hidden],
+.setting-group[hidden] {
+  display: none !important;
+}
 
 .setting-group {
   display: flex;
