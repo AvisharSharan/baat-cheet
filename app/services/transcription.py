@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import os
 import subprocess
 import sys
 import time
+import warnings
+import wave
 from pathlib import Path
 from threading import RLock
 from tempfile import NamedTemporaryFile
@@ -72,6 +75,68 @@ def create_transcription_client(provider: str | None = None) -> TranscriptionCli
         "Unsupported transcription provider: "
         f"{selected}. Use TRANSCRIPTION_PROVIDER=local or TRANSCRIPTION_PROVIDER=indic-conformer."
     )
+
+
+def preload_transcription_runtime() -> None:
+    """Load and lightly warm the active local speech stack.
+
+    This runs in a background startup task so the first real recording does not
+    pay the full model import/load/JIT cost after the user clicks Stop.
+    """
+    _quiet_speech_runtime_warnings()
+    provider = (os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
+    if provider in {"local", "open_source", "open-source", "faster_whisper", "faster-whisper"}:
+        _preload_faster_whisper_runtime()
+        return
+    if provider in {"indic", "indic_conformer", "indic-conformer", "ai4bharat"}:
+        _preload_indic_conformer_runtime()
+        return
+    logger.info("Skipping speech runtime preload for unsupported provider '%s'.", provider)
+
+
+def _preload_faster_whisper_runtime() -> None:
+    model_name = os.getenv("FASTER_WHISPER_MODEL", "base")
+    device = os.getenv("FASTER_WHISPER_DEVICE", "cpu")
+    compute_type = os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8")
+    logger.info("Preloading faster-whisper model '%s' on %s.", model_name, device)
+    _get_faster_whisper_model(model_name, device, compute_type)
+    if os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}:
+        try:
+            from pyannote.audio import Pipeline
+
+            client = FasterWhisperPyannoteTranscriptionClient()
+            logger.info("Preloading pyannote diarization pipeline.")
+            _get_pyannote_pipeline(Pipeline, client.pyannote_model, client.hf_token)
+        except Exception as exc:
+            logger.warning("Could not preload pyannote diarization: %s", _short_error(exc))
+
+
+def _preload_indic_conformer_runtime() -> None:
+    client = IndicConformerPyannoteTranscriptionClient()
+    device = _effective_indic_conformer_device(client.device)
+    logger.info("Preloading Indic Conformer model '%s' on %s.", client.model_name, device)
+    with _quiet_preload_output():
+        _get_indic_conformer_model(client.model_name, device, client.hf_token)
+    if os.getenv("MOM_PRELOAD_DUMMY_AUDIO", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+    with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+        wav_path = Path(handle.name)
+    try:
+        _write_silence_wav(wav_path, duration_s=0.6)
+        try:
+            with _quiet_preload_output():
+                _transcribe_with_indic_conformer(
+                    str(wav_path),
+                    client.model_name,
+                    client.language,
+                    client.decoder,
+                    device,
+                    client.hf_token,
+                )
+        except Exception as exc:
+            logger.info("Indic Conformer dummy warmup finished without transcript: %s", _short_error(exc))
+    finally:
+        _unlink_with_retry(wav_path)
 
 
 class FasterWhisperPyannoteTranscriptionClient:
@@ -307,6 +372,8 @@ def _transcribe_with_indic_conformer(
             "Indic Conformer requires torch and torchaudio. Install the open-source speech requirements."
         ) from exc
 
+    _quiet_speech_runtime_warnings()
+    device = _effective_indic_conformer_device(device)
     model = _get_indic_conformer_model(model_name, device, hf_token)
     waveform, sample_rate = torchaudio.load(audio_path)
     if waveform.shape[0] > 1:
@@ -323,7 +390,7 @@ def _transcribe_with_indic_conformer(
             output = model(waveform, language, decoder)
     except Exception as exc:
         if device != "cpu":
-            logger.warning("Indic Conformer failed on %s; retrying on CPU.", device, exc_info=True)
+            logger.warning("Indic Conformer failed on %s; retrying on CPU. Reason: %s", device, _short_error(exc))
             model = _get_indic_conformer_model(model_name, "cpu", hf_token)
             with torch.inference_mode():
                 output = model(waveform.cpu(), language, decoder)
@@ -491,6 +558,51 @@ def _get_faster_whisper_model(model_name: str, device: str, compute_type: str) -
 def _is_cuda_runtime_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(marker in message for marker in ("cublas", "cudnn", "cuda", "cublas64_12.dll"))
+
+
+def _short_error(exc: Exception, max_length: int = 220) -> str:
+    text = str(exc).replace("\n", " ").strip()
+    return text if len(text) <= max_length else f"{text[:max_length].rstrip()}..."
+
+
+def _quiet_speech_runtime_warnings() -> None:
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    warnings.filterwarnings("ignore", message=r".*Specified provider 'CUDAExecutionProvider'.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r".*torchaudio\.load_with_torchcodec.*", category=UserWarning)
+
+
+def _effective_indic_conformer_device(device: str) -> str:
+    selected = (device or "cpu").strip().lower()
+    if not selected.startswith("cuda"):
+        return selected
+    try:
+        import onnxruntime
+
+        if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
+            logger.info("ONNX Runtime CUDA provider is unavailable; using CPU for Indic Conformer.")
+            return "cpu"
+    except Exception:
+        return selected
+    return selected
+
+
+@contextlib.contextmanager
+def _quiet_preload_output() -> Iterable[None]:
+    if os.getenv("MOM_SUPPRESS_PRELOAD_OUTPUT", "1").strip().lower() in {"0", "false", "no", "off"}:
+        yield
+        return
+    with open(os.devnull, "w", encoding="utf-8") as sink:
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            yield
+
+
+def _write_silence_wav(path: Path, duration_s: float = 0.5, sample_rate: int = 16000) -> None:
+    frames = max(1, int(duration_s * sample_rate))
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(b"\x00\x00" * frames)
 
 
 def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:

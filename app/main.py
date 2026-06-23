@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import tempfile
 import wave
@@ -21,8 +22,8 @@ from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistory
 from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
-from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier
-from .services.transcription import create_transcription_client, transcribe_live_preview
+from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
+from .services.transcription import create_transcription_client, preload_transcription_runtime, transcribe_live_preview
 from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
 
@@ -33,6 +34,7 @@ app = FastAPI(title="Minutes-of-Meeting Tool")
 store = MeetingStore()
 logger = logging.getLogger(__name__)
 running_tasks: dict[str, asyncio.Task[None]] = {}
+warmup_task: asyncio.Task[None] | None = None
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -41,6 +43,37 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+@app.on_event("startup")
+async def startup_preload_runtime() -> None:
+    global warmup_task
+    if _env_flag("MOM_PRELOAD_MODELS", default=True):
+        warmup_task = asyncio.create_task(_preload_runtime_background())
+
+
+@app.on_event("shutdown")
+async def shutdown_preload_runtime() -> None:
+    if warmup_task and not warmup_task.done():
+        warmup_task.cancel()
+
+
+async def _preload_runtime_background() -> None:
+    try:
+        await asyncio.to_thread(preload_transcription_runtime)
+        if _env_flag("MOM_PRELOAD_VOICEPRINT", default=False):
+            await asyncio.to_thread(preload_voiceprinting_runtime)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Speech runtime preload failed; first recording may be slower: %s", exc)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 @app.get("/")

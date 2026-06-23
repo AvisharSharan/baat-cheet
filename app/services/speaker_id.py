@@ -432,3 +432,9 @@ def voiceprinting_enabled() -> bool:
 
 def voiceprinting_worker_enabled() -> bool:
     return os.getenv("VOICEPRINTING_USE_WORKER", "0").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def preload_voiceprinting_runtime() -> None:
+    if not voiceprinting_enabled() or voiceprinting_worker_enabled():
+        return
+    _EmbeddingBackend.load()
