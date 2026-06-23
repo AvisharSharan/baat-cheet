@@ -105,6 +105,48 @@ class MomGenerationClient:
             "max_tokens": self.max_tokens,
             "messages": messages,
         }
+    async def _post_chat(self, prompt: str) -> httpx.Response:
+        payload = self._payload(prompt)
+        url = f"{self.base_url}/api/chat" if self.provider == "ollama" else f"{self.base_url}/chat/completions"
+        headers = {}
+        if self.provider != "ollama":
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        last_response = None
+        async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+            for attempt in range(self.retries + 1):
+                response = await client.post(url, headers=headers, json=payload)
+                if response.status_code not in {502, 503, 504}:
+                    return response
+                last_response = response
+                if attempt < self.retries:  # only sleep between attempts, not after the last one
+                    await asyncio.sleep(2 ** (attempt + 1))
+        return last_response
+
+    def _payload(self, prompt: str) -> dict:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        if self.provider == "ollama":
+            options = {
+                "temperature": 0.1,
+                "num_ctx": _env_int("OLLAMA_NUM_CTX", 32768),
+                "num_predict": self.max_tokens,
+                "num_gpu": _env_int("OLLAMA_NUM_GPU", 0),
+            }
+            return {
+                "model": self.model,
+                "stream": False,
+                "options": options,
+                "messages": messages,
+            }
+        return {
+            "model": self.model,
+            "temperature": 0.1,
+            "max_tokens": self.max_tokens,
+            "messages": messages,
+        }
 
 
 HuggingFaceGemmaMomClient = MomGenerationClient
@@ -129,7 +171,8 @@ Style constraints — never violate these:
 - If there are no action items, write exactly one table row: "| 1 | Not stated | Not stated | Not stated | Not stated |".
 - One sentence per bullet. Use past tense for observations; use imperative for action items.
 - Reproduce speaker names exactly as they appear in the transcript — do not paraphrase or abbreviate them.
-- Do not repeat the same fact across multiple sections.\
+- Do not repeat the same fact across multiple sections.
+- The first line of the output must be a Markdown H1 header containing a descriptive title for the meeting based on its content.\
 """
 
 
