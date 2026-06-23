@@ -253,7 +253,9 @@ class _EmbeddingBackend:
 
         self.torch = torch
         self.torchaudio = torchaudio
-        self.device = os.getenv("VOICE_EMBEDDING_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = _normalize_speechbrain_device(
+            os.getenv("VOICE_EMBEDDING_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
+        )
         self.classifier = EncoderClassifier.from_hparams(
             source=os.getenv("VOICE_EMBEDDING_MODEL", "speechbrain/spkrec-ecapa-voxceleb"),
             savedir=os.getenv("VOICE_EMBEDDING_MODEL_DIR", "pretrained_models/spkrec-ecapa-voxceleb"),
@@ -312,6 +314,11 @@ class _EmbeddingBackend:
         with self.torch.no_grad():
             embedding = self.classifier.encode_batch(waveform.to(self.device).unsqueeze(0)).squeeze()
         return _normalize_vector([float(value) for value in embedding.detach().cpu().tolist()])
+
+
+def _normalize_speechbrain_device(device: str) -> str:
+    selected = (device or "cpu").strip()
+    return "cuda:0" if selected.lower() == "cuda" else selected
 
 
 def _group_usable_turns(transcript: List[SpeakerTurn], min_segment_ms: int) -> Dict[str, List[SpeakerTurn]]:
