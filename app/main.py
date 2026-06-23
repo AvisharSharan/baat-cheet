@@ -23,7 +23,7 @@ from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
-from .services.transcription import create_transcription_client, preload_transcription_runtime, transcribe_live_preview
+from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_preview
 from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
 
@@ -141,13 +141,17 @@ async def live_transcribe(websocket: WebSocket) -> None:
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
     chunk_seconds = int(websocket.query_params.get("chunk_seconds", "1"))
+    if sarvam_provider_selected():
+        await _live_transcribe_sarvam(websocket, sample_rate)
+        return
+
     bytes_per_chunk = sample_rate * 2 * max(1, chunk_seconds)
     pcm_buffer = bytearray()
     sequence = 0
     # Tracks the last emitted text per speaker so overlapping Whisper chunks
     # don't repeat words that were already sent to the client.
     last_text: dict[str, str] = {}
-    await websocket.send_json({"type": "state", "message": "Local captions connected"})
+    await websocket.send_json({"type": "state", "message": "Live captions connected"})
 
     async def _flush() -> None:
         nonlocal sequence
@@ -157,7 +161,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
         wav_path = _write_pcm_wav(bytes(pcm_buffer), sample_rate, f"live-{sequence}")
         pcm_buffer.clear()
         try:
-            await websocket.send_json({"type": "state", "message": "Processing local caption chunk"})
+            await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
             turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
             novel_turns = []
             for turn in (turns or []):
@@ -189,6 +193,82 @@ async def live_transcribe(websocket: WebSocket) -> None:
             pcm_buffer.extend(chunk)
             if len(pcm_buffer) >= bytes_per_chunk:
                 await _flush()
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+async def _live_transcribe_sarvam(websocket: WebSocket, sample_rate: int) -> None:
+    last_text: dict[str, str] = {}
+    stop_event = asyncio.Event()
+    chunk_seconds = max(1, int(os.getenv("SARVAM_LIVE_CHUNK_SECONDS", "2")))
+    bytes_per_chunk = sample_rate * 2 * chunk_seconds
+    pcm_buffer = bytearray()
+
+    async def _emit_turns(turns: list[SpeakerTurn]) -> None:
+        novel_turns = []
+        for turn in turns:
+            suffix = new_suffix(last_text.get(turn.speaker, ""), turn.text)
+            if suffix:
+                last_text[turn.speaker] = turn.text
+                novel_turns.append(turn.model_copy(update={"text": suffix}))
+        if novel_turns:
+            await websocket.send_json(
+                {
+                    "type": "transcript",
+                    "turns": [turn.model_dump(mode="json") for turn in novel_turns],
+                }
+            )
+
+    async def _receive_from_sarvam(session: SarvamLiveCaptionSession) -> None:
+        while not stop_event.is_set():
+            turns = await session.receive_turns()
+            if turns:
+                await _emit_turns(turns)
+
+    try:
+        await websocket.send_json({"type": "state", "message": "Sarvam captions connected"})
+        async with SarvamLiveCaptionSession(sample_rate=sample_rate) as session:
+            receiver_task = asyncio.create_task(_receive_from_sarvam(session))
+
+            async def _flush_audio() -> None:
+                if not pcm_buffer:
+                    return
+                chunk = bytes(pcm_buffer)
+                pcm_buffer.clear()
+                await websocket.send_json({"type": "state", "message": "Processing Sarvam caption chunk"})
+                await session.send_pcm(chunk)
+                await session.flush()
+
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if message.get("text") == "stop":
+                        await _flush_audio()
+                        stop_event.set()
+                        break
+                    chunk = message.get("bytes")
+                    if chunk:
+                        pcm_buffer.extend(chunk)
+                        if len(pcm_buffer) >= bytes_per_chunk:
+                            await _flush_audio()
+            finally:
+                stop_event.set()
+                try:
+                    await asyncio.wait_for(receiver_task, timeout=2)
+                except asyncio.TimeoutError:
+                    receiver_task.cancel()
+                except asyncio.CancelledError:
+                    raise
     except WebSocketDisconnect:
         return
     except Exception as exc:

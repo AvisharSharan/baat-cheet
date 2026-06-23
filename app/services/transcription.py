@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import inspect
+import json
 import logging
 import os
 import subprocess
@@ -12,12 +14,16 @@ import warnings
 import wave
 from pathlib import Path
 from threading import RLock
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any, Dict, Iterable, List, Protocol
 
 from app.models import SpeakerTurn
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_PROVIDER_ALIASES = {"local", "open_source", "open-source", "faster_whisper", "faster-whisper"}
+_INDIC_PROVIDER_ALIASES = {"indic", "indic_conformer", "indic-conformer", "ai4bharat"}
+_SARVAM_PROVIDER_ALIASES = {"sarvam", "saaras", "sarvam-saaras", "saaras-v3"}
 
 
 class TranscriptionError(RuntimeError):
@@ -67,14 +73,22 @@ _INDIC_CONFORMER_LANGUAGES = {
 
 def create_transcription_client(provider: str | None = None) -> TranscriptionClient:
     selected = (provider or os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
-    if selected in {"local", "open_source", "open-source", "faster_whisper", "faster-whisper"}:
+    if selected in _LOCAL_PROVIDER_ALIASES:
         return FasterWhisperPyannoteTranscriptionClient()
-    if selected in {"indic", "indic_conformer", "indic-conformer", "ai4bharat"}:
+    if selected in _INDIC_PROVIDER_ALIASES:
         return IndicConformerPyannoteTranscriptionClient()
+    if selected in _SARVAM_PROVIDER_ALIASES:
+        return SarvamSaarasTranscriptionClient()
     raise TranscriptionError(
         "Unsupported transcription provider: "
-        f"{selected}. Use TRANSCRIPTION_PROVIDER=local or TRANSCRIPTION_PROVIDER=indic-conformer."
+        f"{selected}. Use TRANSCRIPTION_PROVIDER=local, TRANSCRIPTION_PROVIDER=indic-conformer, "
+        "or TRANSCRIPTION_PROVIDER=sarvam."
     )
+
+
+def sarvam_provider_selected(provider: str | None = None) -> bool:
+    selected = (provider or os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
+    return selected in _SARVAM_PROVIDER_ALIASES
 
 
 def preload_transcription_runtime() -> None:
@@ -85,11 +99,14 @@ def preload_transcription_runtime() -> None:
     """
     _quiet_speech_runtime_warnings()
     provider = (os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
-    if provider in {"local", "open_source", "open-source", "faster_whisper", "faster-whisper"}:
+    if provider in _LOCAL_PROVIDER_ALIASES:
         _preload_faster_whisper_runtime()
         return
-    if provider in {"indic", "indic_conformer", "indic-conformer", "ai4bharat"}:
+    if provider in _INDIC_PROVIDER_ALIASES:
         _preload_indic_conformer_runtime()
+        return
+    if provider in _SARVAM_PROVIDER_ALIASES:
+        logger.info("Skipping local speech runtime preload for Sarvam provider.")
         return
     logger.info("Skipping speech runtime preload for unsupported provider '%s'.", provider)
 
@@ -346,6 +363,145 @@ class IndicConformerPyannoteTranscriptionClient(FasterWhisperPyannoteTranscripti
         if not text:
             raise TranscriptionError("Indic Conformer did not return transcript text.")
         return text, duration_ms
+
+
+class SarvamSaarasTranscriptionClient:
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        mode: str | None = None,
+        language_code: str | None = None,
+    ) -> None:
+        self.api_key = api_key or os.getenv("SARVAM_API_KEY") or os.getenv("SARVAM_API_SUBSCRIPTION_KEY")
+        self.model = model or os.getenv("SARVAM_STT_MODEL", "saaras:v3")
+        self.mode = (mode or os.getenv("SARVAM_STT_MODE", "transcribe")).strip().lower()
+        self.language_code = language_code or os.getenv("SARVAM_LANGUAGE_CODE", "hi-IN")
+
+    async def transcribe(
+        self,
+        audio_path: str,
+        num_speakers: int | None = None,
+        speaker_labels_enabled: bool = True,
+    ) -> List[SpeakerTurn]:
+        return await asyncio.to_thread(self._transcribe_sync, audio_path, num_speakers, speaker_labels_enabled)
+
+    def _transcribe_sync(
+        self,
+        audio_path: str,
+        num_speakers: int | None,
+        speaker_labels_enabled: bool,
+    ) -> List[SpeakerTurn]:
+        if not self.api_key:
+            raise TranscriptionError("Set SARVAM_API_KEY to use TRANSCRIPTION_PROVIDER=sarvam.")
+        if self.mode not in {"transcribe", "translate", "verbatim", "translit", "codemix"}:
+            raise TranscriptionError("SARVAM_STT_MODE must be transcribe, translate, verbatim, translit, or codemix.")
+
+        try:
+            from sarvamai import SarvamAI
+        except ImportError as exc:
+            raise TranscriptionError("sarvamai is not installed. Run: python -m pip install -r requirements.txt") from exc
+
+        with TemporaryDirectory(prefix="sarvam-stt-") as output_dir:
+            client = SarvamAI(api_subscription_key=self.api_key)
+            job_kwargs: Dict[str, Any] = {
+                "model": self.model,
+                "mode": self.mode,
+                "language_code": self.language_code,
+                "with_diarization": bool(speaker_labels_enabled and num_speakers != 1),
+            }
+            if speaker_labels_enabled and num_speakers and num_speakers > 1:
+                job_kwargs["num_speakers"] = num_speakers
+
+            job = client.speech_to_text_job.create_job(**job_kwargs)
+            job.upload_files(file_paths=[audio_path])
+            job.start()
+            job.wait_until_complete()
+            file_results = _sarvam_file_results(job)
+            failed = file_results.get("failed") or []
+            successful = file_results.get("successful") or []
+            if failed and not successful:
+                first = failed[0]
+                message = first.get("error_message") if isinstance(first, dict) else str(first)
+                raise TranscriptionError(f"Sarvam transcription failed: {message or 'unknown error'}")
+            if not successful:
+                raise TranscriptionError("Sarvam transcription finished without a successful output file.")
+
+            job.download_outputs(output_dir=output_dir)
+            payload = _load_first_sarvam_output(Path(output_dir))
+
+        return _sarvam_payload_to_turns(payload, speaker_labels_enabled=speaker_labels_enabled)
+
+
+class SarvamLiveCaptionSession:
+    def __init__(
+        self,
+        *,
+        sample_rate: int = 16000,
+        api_key: str | None = None,
+        model: str | None = None,
+        mode: str | None = None,
+        language_code: str | None = None,
+    ) -> None:
+        self.api_key = api_key or os.getenv("SARVAM_API_KEY") or os.getenv("SARVAM_API_SUBSCRIPTION_KEY")
+        self.model = model or os.getenv("SARVAM_STT_MODEL", "saaras:v3")
+        self.mode = (mode or os.getenv("SARVAM_STT_MODE", "transcribe")).strip().lower()
+        self.language_code = language_code or os.getenv("SARVAM_LANGUAGE_CODE", "hi-IN")
+        self.sample_rate = sample_rate
+        self._client: Any = None
+        self._connection: Any = None
+        self._ws: Any = None
+
+    async def __aenter__(self) -> "SarvamLiveCaptionSession":
+        if not self.api_key:
+            raise TranscriptionError("Set SARVAM_API_KEY to use Sarvam live captions.")
+        if self.mode not in {"transcribe", "translate", "verbatim", "translit", "codemix"}:
+            raise TranscriptionError("SARVAM_STT_MODE must be transcribe, translate, verbatim, translit, or codemix.")
+        try:
+            from sarvamai import AsyncSarvamAI
+        except ImportError as exc:
+            raise TranscriptionError("sarvamai is not installed. Run: python -m pip install -r requirements.txt") from exc
+
+        self._client = AsyncSarvamAI(api_subscription_key=self.api_key)
+        connect_kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "mode": self.mode,
+            "sample_rate": self.sample_rate,
+            "input_audio_codec": "wav",
+            "high_vad_sensitivity": _env_bool("SARVAM_LIVE_HIGH_VAD_SENSITIVITY", True),
+            "vad_signals": True,
+            "flush_signal": True,
+        }
+        if self.mode != "translate":
+            connect_kwargs["language_code"] = self.language_code
+        self._connection = self._client.speech_to_text_streaming.connect(**connect_kwargs)
+        self._ws = await self._connection.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if self._connection:
+            await self._connection.__aexit__(exc_type, exc, tb)
+
+    async def send_pcm(self, pcm_bytes: bytes) -> None:
+        if not pcm_bytes or not self._ws:
+            return
+        payload = {
+            "audio": _pcm_to_wav_base64(pcm_bytes, self.sample_rate),
+            "encoding": "audio/wav",
+            "sample_rate": self.sample_rate,
+        }
+        await self._ws.transcribe(**payload)
+
+    async def flush(self) -> None:
+        if self._ws and hasattr(self._ws, "flush"):
+            await self._ws.flush()
+
+    async def receive_turns(self) -> List[SpeakerTurn]:
+        if not self._ws:
+            return []
+        message = await self._ws.recv()
+        return _sarvam_stream_message_to_turns(message)
 
 
 def _transcribe_with_indic_conformer(
@@ -756,6 +912,18 @@ def _wav_duration_ms(audio_path: str) -> int | None:
         return None
 
 
+def _pcm_to_wav_base64(pcm_bytes: bytes, sample_rate: int) -> str:
+    from io import BytesIO
+
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
 def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
     for attempt in range(attempts):
         try:
@@ -931,6 +1099,174 @@ def _segments_to_plain_transcript(segments: List[Dict[str, Any]]) -> List[Speake
             end_ms=next((value for value in reversed(ends) if value is not None), None),
         )
     ]
+
+
+def _sarvam_file_results(job: Any) -> Dict[str, Any]:
+    try:
+        results = job.get_file_results()
+    except Exception as exc:
+        raise TranscriptionError("Could not read Sarvam batch job results.") from exc
+    if not isinstance(results, dict):
+        raise TranscriptionError("Sarvam batch job returned an unexpected file-results shape.")
+    return results
+
+
+def _load_first_sarvam_output(output_dir: Path) -> Dict[str, Any]:
+    json_files = sorted(output_dir.rglob("*.json"))
+    if not json_files:
+        raise TranscriptionError("Sarvam did not download any transcript JSON outputs.")
+    try:
+        payload = json.loads(json_files[0].read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise TranscriptionError(f"Could not parse Sarvam transcript output {json_files[0].name}.") from exc
+    if not isinstance(payload, dict):
+        raise TranscriptionError("Sarvam transcript output was not a JSON object.")
+    return payload
+
+
+def _sarvam_payload_to_turns(payload: Dict[str, Any], *, speaker_labels_enabled: bool) -> List[SpeakerTurn]:
+    if speaker_labels_enabled:
+        entries = ((payload.get("diarized_transcript") or {}).get("entries") or [])
+        if entries:
+            turns = [_sarvam_entry_to_turn(entry) for entry in entries if isinstance(entry, dict)]
+            turns = [turn for turn in turns if turn.text.strip()]
+            if turns:
+                return _merge_adjacent_turns(turns)
+
+    timestamp_turns = _sarvam_timestamp_turns(payload)
+    if timestamp_turns:
+        if not speaker_labels_enabled:
+            return _segments_to_plain_transcript([turn.model_dump() for turn in timestamp_turns])
+        return _merge_adjacent_turns(timestamp_turns)
+
+    text = str(payload.get("transcript") or "").strip()
+    if not text:
+        raise TranscriptionError("Sarvam did not return transcript text.")
+    speaker = "Speaker 1" if speaker_labels_enabled else ""
+    return [SpeakerTurn(speaker=speaker, text=text)]
+
+
+def _sarvam_stream_message_to_turns(message: Any) -> List[SpeakerTurn]:
+    payload = _message_to_plain_data(message)
+    if not payload:
+        return []
+    if isinstance(payload, str):
+        text = payload.strip()
+        return [SpeakerTurn(speaker="Live", text=text)] if text else []
+    if not isinstance(payload, dict):
+        return []
+
+    message_type = str(payload.get("type") or payload.get("event") or payload.get("message_type") or "").lower()
+    if message_type in {"events", "event", "speech_start", "speech_end"}:
+        return []
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    text = _first_text_value(
+        data,
+        (
+            "transcript",
+            "transcripts",
+            "translation",
+            "text",
+            "transcription",
+            "utterance",
+            "display_text",
+            "final_transcript",
+            "partial_transcript",
+        ),
+    )
+    if not text:
+        return []
+    return [SpeakerTurn(speaker="Live", text=text)]
+
+
+def _message_to_plain_data(message: Any) -> Any:
+    if isinstance(message, (str, bytes, bytearray)):
+        text = message.decode("utf-8", errors="ignore") if isinstance(message, (bytes, bytearray)) else message
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    if isinstance(message, dict):
+        return message
+    for attr in ("model_dump", "dict"):
+        method = getattr(message, attr, None)
+        if callable(method):
+            try:
+                return method()
+            except Exception:
+                pass
+    if hasattr(message, "__dict__"):
+        return {
+            key: _message_to_plain_data(value)
+            for key, value in vars(message).items()
+            if not key.startswith("_")
+        }
+    return message
+
+
+def _first_text_value(payload: Any, keys: Iterable[str]) -> str:
+    if isinstance(payload, str):
+        return payload.strip()
+    if not isinstance(payload, dict):
+        return ""
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for value in payload.values():
+        nested = _first_text_value(value, keys)
+        if nested:
+            return nested
+    return ""
+
+
+def _sarvam_entry_to_turn(entry: Dict[str, Any]) -> SpeakerTurn:
+    speaker_id = str(entry.get("speaker_id") or "0")
+    speaker = _sarvam_speaker_label(speaker_id)
+    return SpeakerTurn(
+        speaker=speaker,
+        text=str(entry.get("transcript") or "").strip(),
+        start_ms=_seconds_to_ms(entry.get("start_time_seconds")),
+        end_ms=_seconds_to_ms(entry.get("end_time_seconds")),
+    )
+
+
+def _sarvam_timestamp_turns(payload: Dict[str, Any]) -> List[SpeakerTurn]:
+    timestamps = payload.get("timestamps") or {}
+    chunks = timestamps.get("chunks") or []
+    starts = timestamps.get("start_time_seconds") or []
+    ends = timestamps.get("end_time_seconds") or []
+    turns: List[SpeakerTurn] = []
+    for index, chunk in enumerate(chunks):
+        text = str(chunk or "").strip()
+        if not text:
+            continue
+        turns.append(
+            SpeakerTurn(
+                speaker="Speaker 1",
+                text=text,
+                start_ms=_seconds_to_ms(starts[index] if index < len(starts) else None),
+                end_ms=_seconds_to_ms(ends[index] if index < len(ends) else None),
+            )
+        )
+    return turns
+
+
+def _sarvam_speaker_label(speaker_id: str) -> str:
+    try:
+        return f"Speaker {int(speaker_id) + 1}"
+    except ValueError:
+        return _canonical_speaker_label(speaker_id, {})
+
+
+def _seconds_to_ms(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(float(value) * 1000)
+    except (TypeError, ValueError):
+        return None
 
 
 def _best_overlap_speaker(start_ms: int | None, end_ms: int | None, diarization: List[Dict[str, Any]]) -> str | None:

@@ -154,6 +154,9 @@ class SettingsResponse(BaseModel):
     indic_conformer_language: str = "hi"
     indic_conformer_decoder: str = "ctc"
     indic_conformer_device: str = "cuda"
+    sarvam_stt_model: str = "saaras:v3"
+    sarvam_stt_mode: str = "transcribe"
+    sarvam_language_code: str = "hi-IN"
     diarization_provider: str = "pyannote"
     voiceprinting_enabled: str = "1"
 
@@ -172,6 +175,9 @@ class SettingsUpdateRequest(BaseModel):
     indic_conformer_language: Optional[str] = None
     indic_conformer_decoder: Optional[str] = None
     indic_conformer_device: Optional[str] = None
+    sarvam_stt_model: Optional[str] = None
+    sarvam_stt_mode: Optional[str] = None
+    sarvam_language_code: Optional[str] = None
     diarization_provider: Optional[str] = None
     voiceprinting_enabled: Optional[str] = None
 

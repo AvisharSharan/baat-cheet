@@ -11,7 +11,7 @@ async function startRecording() {
     recorder.onstop = async () => {
       try {
         isFinalizingRecording = true;
-        setStatus(liveSocket ? "Finishing local captions..." : "Preparing final transcription...");
+        setStatus(liveSocket ? "Finishing live captions..." : "Preparing final transcription...");
         await stopLiveTranscription({ waitForFinalChunk: true });
       } finally {
         stopActiveCapture();
@@ -20,9 +20,10 @@ async function startRecording() {
         isFinalizingRecording = false;
       }
     };
-    if (liveCaptionsToggle.checked) await startLiveTranscription(stream);
+    const useLiveCaptions = await shouldUseLiveCaptions();
+    if (useLiveCaptions) await startLiveTranscription(stream);
     recorder.start();
-    setStatus(liveCaptionsToggle.checked ? "Recording - local captions" : "Recording");
+    setStatus(useLiveCaptions ? "Recording - live captions" : "Recording");
     setRecordingState(true);
   } catch (error) {
     stopActiveCapture();
@@ -67,7 +68,7 @@ function stopRecording() {
   if (recorder && recorder.state !== "inactive") {
     isFinalizingRecording = true;
     recorder.stop();
-    setStatus(liveSocket ? "Finishing local captions..." : "Preparing final transcription...");
+    setStatus(liveSocket ? "Finishing live captions..." : "Preparing final transcription...");
     setRecordingState(false);
     stopBtn.disabled = true;
   }
@@ -105,16 +106,16 @@ async function createLiveSocket() {
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = liveTranscript.concat(payload.turns);
       renderTranscript(liveTranscript, { Live: "Live" }, { skipSpeakerEditor: true, follow: true });
-      if (!isFinalizingRecording) setStatus("Recording - local captions");
+      if (!isFinalizingRecording) setStatus("Recording - live captions");
     }
-    if (payload.type === "error") setStatus(`Local captions failed: ${payload.message}`);
+    if (payload.type === "error") setStatus(`Live captions failed: ${payload.message}`);
   };
   socket.onclose = () => { liveSocket = null; };
   await new Promise((resolve, reject) => {
     socket.onopen = resolve;
-    socket.onerror = () => reject(new Error("Local caption connection failed"));
+    socket.onerror = () => reject(new Error("Live caption connection failed"));
   });
-  socket.onerror = () => setStatus("Local caption connection failed");
+  socket.onerror = () => setStatus("Live caption connection failed");
   return socket;
 }
 
@@ -162,6 +163,26 @@ function inferredSpeakerCount() {
   return NaN;
 }
 
+async function shouldUseLiveCaptions() {
+  if (!liveCaptionsToggle.checked) return false;
+  const engine = await currentSpeechEngine();
+  if (engine === "sarvam" && !speakerLabelsToggle.checked) return false;
+  return true;
+}
+
+async function currentSpeechEngine() {
+  if (window.currentSpeechEngine) return window.currentSpeechEngine;
+  try {
+    const response = await apiFetch("/api/settings");
+    if (!response.ok) return "open-source";
+    const settings = await response.json();
+    window.currentSpeechEngine = settings.transcription_provider === "sarvam" ? "sarvam" : "open-source";
+  } catch (error) {
+    window.currentSpeechEngine = "open-source";
+  }
+  return window.currentSpeechEngine;
+}
+
 async function uploadMeetingFile(file, filename) {
   const form = new FormData();
   form.append("audio", file, filename);
@@ -181,7 +202,7 @@ async function uploadMeetingFile(file, filename) {
   const data = await response.json();
   meetingId = data.id;
   meetingName.value = data.name || meetingName.value;
-  setStatus("Transcribing locally…");
+  setStatus("Transcribing...");
   showMeeting();
   loadHistory();
   pollStatus();
@@ -597,7 +618,7 @@ function setStatus(text) {
 function statusLabel(data) {
   if (data.error) return `${data.status}: ${shortStatusError(data.error)}`;
   if (data.status === "uploaded") return "Uploaded";
-  if (data.status === "transcribing") return "Transcribing locally";
+  if (data.status === "transcribing") return "Transcribing";
   if (data.status === "transcribed" && data.voiceprint_status === "processing") return "Matching saved speaker profiles";
   if (data.status === "transcribed") return "Transcript ready";
   if (data.status === "generating") return "Drafting minutes";
@@ -678,9 +699,9 @@ function updateWorkflowUI() {
     if (transcriptSub) transcriptSub.textContent = "Final transcript after upload";
   } else if (liveCaptionsToggle.checked) {
     workflowHint.textContent = speakerLabelsEnabled
-      ? "Local captions preview during recording. Final upload still runs full diarized transcription."
-      : "Local captions preview during recording. Final upload creates one plain transcript without speaker labels.";
-    if (transcriptSub) transcriptSub.textContent = "Local captions during recording, final transcript after upload";
+      ? "Live captions preview during recording. Final upload still runs full diarized transcription."
+      : "Live captions preview during recording. Final upload creates one plain transcript without speaker labels.";
+    if (transcriptSub) transcriptSub.textContent = "Live captions during recording, final transcript after upload";
   } else {
     workflowHint.textContent = speakerLabelsEnabled
       ? "Record meeting audio, then finalize with local faster-whisper transcription and pyannote diarization."

@@ -1,10 +1,9 @@
 # बात-Cheet
 
 बात-Cheet is a local-first meeting intelligence tool. It records live meetings or
-accepts uploaded media, creates a transcript with faster-whisper, optionally
-diarizes speakers with pyannote.audio, helps review speaker labels, and drafts
-structured Minutes of Meeting with Ollama or another OpenAI-compatible chat
-provider.
+accepts uploaded media, creates a transcript with a local speech stack or
+Sarvam Saaras v3, helps review speaker labels, and drafts structured Minutes of
+Meeting with Ollama or another OpenAI-compatible chat provider.
 
 The app is a FastAPI backend with a static browser UI. Meeting history,
 transcripts, generated minutes, and optional speaker voice profiles are stored
@@ -16,8 +15,8 @@ on the local machine.
 - Live recording from meeting tab plus microphone, or microphone only.
 - Upload flow for audio/video files such as WebM, MP3, MP4, WAV, OGG, MOV, and MKV.
 - Local live-caption preview while recording.
-- Final local transcription with faster-whisper or AI4Bharat Indic Conformer.
-- Optional pyannote speaker diarization, expected-speaker hints, and one-speaker fast path.
+- Final transcription with faster-whisper, AI4Bharat Indic Conformer, or Sarvam Saaras v3.
+- Optional speaker diarization through pyannote locally or Sarvam batch output.
 - Plain transcript mode when speaker labels are disabled.
 - Transcript editing before minutes generation.
 - Speaker label editing with optional remembered voice profiles through SpeechBrain.
@@ -36,9 +35,9 @@ Record live audio or upload media
 FastAPI stores a temporary upload
         |
         v
-faster-whisper / Indic Conformer transcription
+Local speech stack or Sarvam batch transcription
         |
-        +--> optional pyannote diarization
+        +--> optional diarization
         |
         +--> optional SpeechBrain voice matching
         |
@@ -61,7 +60,7 @@ is persisted separately as JSON.
 - `app/auth.py` - local password auth and JWT-style bearer tokens.
 - `app/storage.py` - JSON meeting history store.
 - `app/models.py` - Pydantic request/response and meeting state models.
-- `app/services/transcription.py` - faster-whisper or Indic Conformer transcription and pyannote diarization.
+- `app/services/transcription.py` - local or Sarvam transcription and diarization adapters.
 - `app/services/live_transcription.py` - live-caption overlap cleanup.
 - `app/services/speaker_id.py` - optional SpeechBrain voice profile matching.
 - `app/services/mom.py` - MoM prompt and chat-provider client.
@@ -80,6 +79,7 @@ is persisted separately as JSON.
 - A Hugging Face token with access to `pyannote/speaker-diarization-community-1`.
 - Indic Conformer use also requires accepting the gated Hugging Face terms for
   `ai4bharat/indic-conformer-600m-multilingual`.
+- Optional Sarvam transcription requires a Sarvam API key.
 - Optional voice profile support requires PyTorch, torchaudio, and SpeechBrain.
 
 ## Setup
@@ -139,7 +139,15 @@ INDIC_CONFORMER_LANGUAGE=hi
 INDIC_CONFORMER_DECODER=ctc
 INDIC_CONFORMER_DEVICE=cuda
 
-# Local live-caption preview.
+# Optional Sarvam Saaras v3 transcription and live captions.
+# Set TRANSCRIPTION_PROVIDER=sarvam to use this path.
+SARVAM_API_KEY=your_sarvam_api_key
+SARVAM_STT_MODEL=saaras:v3
+SARVAM_STT_MODE=transcribe
+SARVAM_LANGUAGE_CODE=hi-IN
+SARVAM_LIVE_HIGH_VAD_SENSITIVITY=1
+
+# Local live-caption preview used when TRANSCRIPTION_PROVIDER is local or indic-conformer.
 LIVE_WHISPER_MODEL=base
 LIVE_WHISPER_DEVICE=cuda
 LIVE_WHISPER_COMPUTE_TYPE=float16
@@ -219,10 +227,11 @@ Sign in with `LOCAL_AUTH_USERNAME` and `LOCAL_AUTH_PASSWORD`.
 
 ## Notes
 
-- Live captions are only a preview. Final transcript quality comes from the post-upload batch transcription.
+- Live captions use Sarvam streaming only when `TRANSCRIPTION_PROVIDER=sarvam`; otherwise they use the local faster-whisper preview. Final transcript quality comes from the post-upload batch transcription.
 - The recommended setup uses CUDA with `float16` for faster-whisper, live Whisper, and pyannote.
 - Indic Conformer supports Indian language codes such as `hi`, `ta`, `te`, `mr`, `bn`, `gu`, `kn`, `ml`, `pa`, `ur`, and others from the IN-22 set.
 - The Indic Conformer integration returns full-file transcript text without per-segment timestamps. When speaker labels are enabled, pyannote speaker spans are used to split words approximately by duration; if diarization fails, the full transcript is still finalized as `Speaker 1`.
+- Sarvam uses Saaras v3 streaming for live captions and batch jobs for the final recording. Use `transcribe` with `hi-IN` for Hindi script output; `translit` intentionally returns Romanized text. Diarized output is used for the final transcript when speaker labels are enabled.
 - If CUDA is unavailable, set Whisper devices to `cpu` and compute type to `int8`.
 - `FASTER_WHISPER_CPU_FALLBACK=1` lets final transcription retry on CPU for common CUDA runtime failures.
 - Speaker labels are skipped when the UI toggle is off, when `DIARIZATION_PROVIDER=none`, or when the expected speaker count is `1`.

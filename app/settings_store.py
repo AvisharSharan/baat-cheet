@@ -38,6 +38,9 @@ _SCHEMA: Dict[str, tuple[str, str]] = {
     "indic_conformer_language": ("INDIC_CONFORMER_LANGUAGE", "hi"),
     "indic_conformer_decoder": ("INDIC_CONFORMER_DECODER", "ctc"),
     "indic_conformer_device": ("INDIC_CONFORMER_DEVICE", "cuda"),
+    "sarvam_stt_model": ("SARVAM_STT_MODEL", "saaras:v3"),
+    "sarvam_stt_mode": ("SARVAM_STT_MODE", "transcribe"),
+    "sarvam_language_code": ("SARVAM_LANGUAGE_CODE", "hi-IN"),
     # Diarization
     "diarization_provider": ("DIARIZATION_PROVIDER", "pyannote"),
     # Voiceprinting
