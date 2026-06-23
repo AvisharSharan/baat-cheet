@@ -9,9 +9,9 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
-MARGIN_X = 46
-MARGIN_TOP = 54
-MARGIN_BOTTOM = 44
+MARGIN_X = 60
+MARGIN_TOP = 70
+MARGIN_BOTTOM = 60
 
 BRAND_BLUE = colors.HexColor("#005BFF")
 INK = colors.HexColor("#121212")
