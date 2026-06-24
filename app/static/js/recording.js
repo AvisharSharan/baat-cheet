@@ -133,8 +133,8 @@ async function createLiveSocket() {
       setStatus(payload.message);
     }
     if (payload.type === "transcript" && payload.turns) {
-      liveTranscript = liveTranscript.concat(payload.turns);
-      renderTranscript(liveTranscript, { Live: "Live" }, { skipSpeakerEditor: true, follow: true });
+      liveTranscript = mergeLiveTranscriptTurns(liveTranscript, payload.turns);
+      renderTranscript(liveTranscript, {}, { skipSpeakerEditor: true, follow: true, livePreview: true });
       if (!isFinalizingRecording) setStatus("Recording - live captions");
     }
     if (payload.type === "error") setStatus(`Live captions failed: ${payload.message}`);
@@ -192,6 +192,39 @@ async function uploadRecordedFile() {
   if (!file) { setStatus("Choose a recorded audio or video file"); return; }
   resetSessionOutput();
   await uploadMeetingFile(file, file.name || "recorded-meeting");
+}
+
+function mergeLiveTranscriptTurns(currentTurns, nextTurns) {
+  const currentText = cleanLiveCaptionText((currentTurns || [])
+    .map((turn) => String(turn.text || "").trim())
+    .filter(Boolean)
+    .join(" "));
+  const nextText = cleanLiveCaptionText((nextTurns || [])
+    .map((turn) => String(turn.text || "").trim())
+    .filter(Boolean)
+    .join(" "));
+  if (!nextText) return currentText ? [{ speaker: "", text: currentText }] : [];
+  const text = [currentText, nextText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  const previewText = words.slice(-80).join(" ");
+  return previewText ? [{ speaker: "", text: previewText }] : [];
+}
+
+function cleanLiveCaptionText(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const noisyTokenPattern = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{8}[_-][A-Za-z0-9_-]{8,}|(?=[A-Za-z0-9_-]{20,}\b)(?=.*\d)(?=.*[-_])[A-Za-z0-9_-]+)\b/gi;
+  const cleaned = collapseRepeatedLiveWords(text.replace(noisyTokenPattern, "").replace(/\s+/g, " ").trim());
+  if (!cleaned) return "";
+  const symbolCount = (cleaned.match(/[^A-Za-z0-9\s.,?!'"()-]/g) || []).length;
+  return symbolCount / Math.max(cleaned.length, 1) > 0.12 ? "" : cleaned;
+}
+
+function collapseRepeatedLiveWords(value) {
+  return String(value || "")
+    .split(/\s+/)
+    .filter((word, index, words) => index === 0 || word.toLowerCase() !== words[index - 1].toLowerCase())
+    .join(" ");
 }
 
 function inferredSpeakerCount() {
@@ -274,14 +307,16 @@ function renderState(data) {
   speakerLabelsToggle.checked = speakerLabelsEnabled;
   const isTranscribing = data.status === "uploaded" || data.status === "transcribing";
   const transcriptForDisplay = finalTranscript.length ? finalTranscript : (isTranscribing ? liveTranscript : []);
+  const showingLivePreview = !finalTranscript.length && transcriptForDisplay.length > 0;
   if (finalTranscript.length > 0) liveTranscript = [];
   renderTranscript(
     transcriptForDisplay,
-    finalTranscript.length ? (data.speaker_names || {}) : { Live: "Live" },
+    finalTranscript.length ? (data.speaker_names || {}) : {},
     {
       processing: isTranscribing,
       skipSpeakerEditor: !speakerLabelsEnabled || (!finalTranscript.length && transcriptForDisplay.length > 0),
       noSpeakerLabels: !speakerLabelsEnabled && finalTranscript.length > 0,
+      livePreview: showingLivePreview,
       follow: isTranscribing || !finalTranscript.length,
       editable: finalTranscript.length > 0 && !isTranscribing,
     },
@@ -467,10 +502,11 @@ function renderTranscript(transcript, speakerNames, options = {}) {
 
   // Key changes only when new turns arrive or the last turn's text updates
   const speakerNameKey = JSON.stringify(speakerNames || {});
-  const contentKey = `${options.noSpeakerLabels ? "plain" : "labels"}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
+  const contentMode = options.livePreview ? "live" : (options.noSpeakerLabels ? "plain" : "labels");
+  const contentKey = `${contentMode}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
-  updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels });
+  updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels, livePreview: options.livePreview });
 
   speakerEditor.innerHTML = options.skipSpeakerEditor ? "" : speakers.map((speaker) => {
     const value = speakerNames[speaker] || speaker;
@@ -480,7 +516,7 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   speakerFooter.hidden = options.skipSpeakerEditor || !speakers.length;
 
   if (transcriptBadge) {
-    transcriptBadge.textContent = options.processing ? "Finalizing" : (options.noSpeakerLabels ? "Plain transcript" : `${transcript.length} turns`);
+    transcriptBadge.textContent = options.livePreview ? "Live preview" : (options.processing ? "Finalizing" : (options.noSpeakerLabels ? "Plain transcript" : `${transcript.length} turns`));
     transcriptBadge.hidden = false;
   }
 
@@ -489,9 +525,9 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   _lastTranscriptKey = contentKey;
 
   const shouldFollowTranscript = options.follow || isTranscriptNearBottom();
-  transcriptEl.className = options.noSpeakerLabels ? "transcript transcript-plain" : "transcript";
+  transcriptEl.className = (options.noSpeakerLabels || options.livePreview) ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn, index) => {
-    if (options.noSpeakerLabels) {
+    if (options.noSpeakerLabels || options.livePreview) {
       return renderTurnHtml(turn, index, "", options);
     }
     const label = speakerNames[turn.speaker] || turn.speaker;
@@ -570,7 +606,7 @@ async function saveTranscriptTurn(index) {
 function updateMetrics(transcript, options = {}) {
   const speakers = new Set(transcript.map((turn) => turn.speaker));
   const words = transcript.reduce((count, turn) => count + turn.text.trim().split(/\s+/).filter(Boolean).length, 0);
-  speakerMetric.textContent = options.noSpeakerLabels ? "Off" : (speakers.size || "—");
+  speakerMetric.textContent = options.livePreview ? "Live" : (options.noSpeakerLabels ? "Off" : (speakers.size || "—"));
   turnMetric.textContent = transcript.length || "—";
   wordMetric.textContent = words > 999 ? `${(words / 1000).toFixed(1)}k` : (words || "—");
 }
