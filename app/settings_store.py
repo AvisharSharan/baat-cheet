@@ -24,8 +24,12 @@ _lock = RLock()
 # ── schema: key → (env-var name, default value) ─────────────────────
 _SCHEMA: Dict[str, tuple[str, str]] = {
     # Ollama / LLM
+    "mom_provider":      ("MOM_PROVIDER",          "ollama"),
     "ollama_base_url":   ("OLLAMA_BASE_URL",       "http://127.0.0.1:11434"),
     "ollama_model":      ("OLLAMA_MOM_MODEL",      "qwen2.5:3b"),
+    "hosted_api_url":    ("HOSTED_AI_URL",         ""),
+    "hosted_api_model":  ("HOSTED_AI_MODEL",       "deepseek-ai/DeepSeek-V4-Flash"),
+    "hosted_api_key":    ("HOSTED_AI_API_KEY",     ""),
     "mom_max_tokens":    ("MOM_MAX_TOKENS",        "1200"),
     "ollama_num_ctx":    ("OLLAMA_NUM_CTX",        "32768"),
     "ollama_num_gpu":    ("OLLAMA_NUM_GPU",        "0"),
@@ -47,6 +51,8 @@ _SCHEMA: Dict[str, tuple[str, str]] = {
     "voiceprinting_enabled": ("VOICEPRINTING_ENABLED", "1"),
 }
 
+_SENSITIVE_KEYS = {"hosted_api_key"}
+
 
 def _read_file() -> Dict[str, str]:
     """Read the settings file, returning an empty dict on failure."""
@@ -67,13 +73,13 @@ def _write_file(data: Dict[str, str]) -> None:
     tmp.replace(_SETTINGS_PATH)
 
 
-def load_settings() -> Dict[str, Any]:
+def load_settings(*, include_secrets: bool = False) -> Dict[str, Any]:
     """Return settings and mirror resolved values into ``os.environ``."""
     with _lock:
         saved = _read_file()
         result = _resolve_settings(saved)
         _apply_to_environment(result)
-        return result
+        return _public_settings(result) if not include_secrets else result
 
 
 def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,6 +88,8 @@ def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
         current = _read_file()
         for key, value in updates.items():
             if key not in _SCHEMA:
+                continue
+            if key in _SENSITIVE_KEYS and not str(value).strip():
                 continue
             current[key] = str(value)
             env_var = _SCHEMA[key][0]
@@ -102,3 +110,9 @@ def _apply_to_environment(settings: Dict[str, Any]) -> None:
         if key not in _SCHEMA:
             continue
         os.environ[_SCHEMA[key][0]] = str(value)
+
+
+def _public_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    public = {key: value for key, value in settings.items() if key not in _SENSITIVE_KEYS}
+    public["hosted_api_configured"] = bool(str(settings.get("hosted_api_key") or "").strip())
+    return public

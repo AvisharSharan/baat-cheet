@@ -5,12 +5,13 @@
 function openSettings() {
   document.getElementById("settingsModal").hidden = false;
   loadAppSettings();
-  fetchOllamaModels();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+  var momProvider = document.getElementById("settMomProvider");
   var engine = document.getElementById("settSpeechEngine");
   var provider = document.getElementById("settTranscriptionProvider");
+  if (momProvider) momProvider.addEventListener("change", updateMomProviderVisibility);
   if (engine) engine.addEventListener("change", updateSpeechSettingsVisibility);
   if (provider) provider.addEventListener("change", updateSpeechSettingsVisibility);
 });
@@ -43,7 +44,9 @@ async function loadAppSettings() {
     if (!resp.ok) return;
     var s = await resp.json();
 
+    _setSelect("settMomProvider", s.mom_provider || "ollama");
     document.getElementById("settOllamaUrl").value = s.ollama_base_url || "";
+    document.getElementById("settHostedApiModel").value = s.hosted_api_model || "deepseek-ai/DeepSeek-V4-Flash";
     document.getElementById("settMaxTokens").value = s.mom_max_tokens || "";
     document.getElementById("settNumCtx").value = s.ollama_num_ctx || "";
     document.getElementById("settNumGpu").value = s.ollama_num_gpu || "";
@@ -64,7 +67,7 @@ async function loadAppSettings() {
     document.getElementById("settSarvamLanguage").value = s.sarvam_language_code || "";
     _setSelect("settDiarization", s.diarization_provider);
     _setSelect("settVoiceprinting", s.voiceprinting_enabled);
-    window.currentSpeechEngine = provider === "sarvam" ? "sarvam" : "open-source";
+    window.currentSpeechEngineValue = provider === "sarvam" ? "sarvam" : "open-source";
     updateSpeechSettingsVisibility();
     // Account
     var chip = document.getElementById("userChip");
@@ -72,12 +75,14 @@ async function loadAppSettings() {
 
     // Store current model to pre-select after model list loads
     window._currentOllamaModel = s.ollama_model || "";
+    updateMomProviderVisibility();
   } catch (e) {
     console.error("Failed to load settings", e);
   }
 }
 
 async function fetchOllamaModels() {
+  if (document.getElementById("settMomProvider").value !== "ollama") return;
   var select = document.getElementById("settOllamaModel");
   select.innerHTML = "<option value=''>Loading…</option>";
   try {
@@ -125,8 +130,10 @@ async function saveAppSettings() {
   btn.textContent = "Saving…";
   try {
     var body = {
+      mom_provider: document.getElementById("settMomProvider").value,
       ollama_base_url: document.getElementById("settOllamaUrl").value.trim(),
       ollama_model: document.getElementById("settOllamaModel").value,
+      hosted_api_model: document.getElementById("settHostedApiModel").value.trim(),
       mom_max_tokens: document.getElementById("settMaxTokens").value.trim(),
       ollama_num_ctx: document.getElementById("settNumCtx").value.trim(),
       ollama_num_gpu: document.getElementById("settNumGpu").value.trim(),
@@ -153,7 +160,7 @@ async function saveAppSettings() {
       body: JSON.stringify(body),
     });
     if (!resp.ok) throw new Error("Save failed");
-    window.currentSpeechEngine = document.getElementById("settSpeechEngine").value;
+    window.currentSpeechEngineValue = document.getElementById("settSpeechEngine").value;
     closeSettings();
   } catch (e) {
     console.error("Failed to save settings", e);
@@ -215,6 +222,15 @@ function selectedTranscriptionProvider() {
   var engine = document.getElementById("settSpeechEngine").value;
   if (engine === "sarvam") return "sarvam";
   return document.getElementById("settTranscriptionProvider").value || "local";
+}
+
+function updateMomProviderVisibility() {
+  var providerEl = document.getElementById("settMomProvider");
+  var provider = providerEl ? providerEl.value : "ollama";
+  document.querySelectorAll("[data-mom-provider-setting]").forEach(function(group) {
+    group.hidden = group.dataset.momProviderSetting !== provider;
+  });
+  if (provider === "ollama") fetchOllamaModels();
 }
 
 function updateSpeechSettingsVisibility() {

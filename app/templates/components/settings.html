@@ -19,12 +19,21 @@
           <!-- AI Model Tab -->
           <div class="settings-section" data-section="ai">
             <div class="setting-group">
+              <label class="setting-label" data-i18n="set.mom_provider">Minutes Provider</label>
+              <select id="settMomProvider" class="setting-select">
+                <option value="ollama">Ollama</option>
+                <option value="hosted">Hosted API</option>
+              </select>
+              <span class="setting-hint" data-i18n="set.mom_provider_hint">Choose where generated minutes are drafted</span>
+            </div>
+
+            <div class="setting-group" data-mom-provider-setting="ollama">
               <label class="setting-label" data-i18n="set.ollama_url">Ollama Base URL</label>
               <input id="settOllamaUrl" type="text" class="setting-input" placeholder="http://127.0.0.1:11434" />
               <span class="setting-hint" data-i18n="set.ollama_url_hint">The URL of your local Ollama instance</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-mom-provider-setting="ollama">
               <label class="setting-label" data-i18n="set.model">Model</label>
               <div class="setting-row">
                 <select id="settOllamaModel" class="setting-select">
@@ -37,19 +46,25 @@
               <span class="setting-hint" data-i18n="set.model_hint">Select from models installed in your Ollama instance</span>
             </div>
 
+            <div class="setting-group" data-mom-provider-setting="hosted">
+              <label class="setting-label" data-i18n="set.hosted_model">Hosted Model</label>
+              <input id="settHostedApiModel" type="text" class="setting-input" placeholder="deepseek-ai/DeepSeek-V4-Flash" />
+              <span class="setting-hint" data-i18n="set.hosted_model_hint">Model name sent in the hosted API request</span>
+            </div>
+
             <div class="setting-group">
               <label class="setting-label" data-i18n="set.max_tokens">Max Tokens</label>
               <input id="settMaxTokens" type="number" class="setting-input" placeholder="1200" min="256" max="8192" />
               <span class="setting-hint" data-i18n="set.max_tokens_hint">Maximum tokens for generated minutes (256–8192)</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-mom-provider-setting="ollama">
               <label class="setting-label" data-i18n="set.ctx">Context Window</label>
               <input id="settNumCtx" type="number" class="setting-input" placeholder="32768" min="2048" max="131072" />
               <span class="setting-hint" data-i18n="set.ctx_hint">Ollama context window size</span>
             </div>
 
-            <div class="setting-group">
+            <div class="setting-group" data-mom-provider-setting="ollama">
               <label class="setting-label" data-i18n="set.gpu">GPU Layers</label>
               <input id="settNumGpu" type="number" class="setting-input" placeholder="0" min="0" />
               <span class="setting-hint" data-i18n="set.gpu_hint">Number of GPU layers to offload (0 = CPU only)</span>

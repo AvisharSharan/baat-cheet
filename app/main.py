@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -156,6 +157,10 @@ async def live_transcribe(websocket: WebSocket) -> None:
     async def _flush() -> None:
         nonlocal sequence
         if not pcm_buffer:
+            return
+        if not _pcm_has_enough_signal(bytes(pcm_buffer), sample_rate):
+            pcm_buffer.clear()
+            await websocket.send_json({"type": "state", "message": "Listening for speech"})
             return
         sequence += 1
         wav_path = _write_pcm_wav(bytes(pcm_buffer), sample_rate, f"live-{sequence}")
@@ -639,3 +644,30 @@ def _write_pcm_wav(pcm_bytes: bytes, sample_rate: int, stem: str) -> Path:
         wav.setframerate(sample_rate)
         wav.writeframes(pcm_bytes)
     return path
+
+
+def _pcm_has_enough_signal(pcm_bytes: bytes, sample_rate: int) -> bool:
+    if not pcm_bytes:
+        return False
+    sample_count = len(pcm_bytes) // 2
+    min_samples = int(sample_rate * max(0.1, _env_float("LIVE_MIN_AUDIO_SECONDS", 0.35)))
+    if sample_count < min_samples:
+        return False
+    total = 0
+    peak = 0
+    for index in range(0, sample_count * 2, 2):
+        sample = int.from_bytes(pcm_bytes[index:index + 2], byteorder="little", signed=True)
+        total += sample * sample
+        peak = max(peak, abs(sample))
+    rms = math.sqrt(total / sample_count)
+    return rms >= _env_float("LIVE_PCM_RMS_THRESHOLD", 120.0) and peak >= _env_float("LIVE_PCM_PEAK_THRESHOLD", 500.0)
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default

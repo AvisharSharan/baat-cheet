@@ -54,7 +54,26 @@ function microphoneAudioConstraints() {
   return audio;
 }
 
+function ensureMediaCaptureSupported() {
+  const reason = mediaCaptureUnavailableReason();
+  if (reason) throw new Error(reason);
+}
+
+function mediaCaptureUnavailableReason() {
+  if (!window.isSecureContext) {
+    return "Microphone access is blocked on this address. Open the app on localhost, or use HTTPS for phone/LAN recording.";
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return "This browser does not expose microphone recording. Try Chrome/Safari over HTTPS.";
+  }
+  if (typeof MediaRecorder === "undefined") {
+    return "This browser does not support in-page audio recording.";
+  }
+  return "";
+}
+
 async function createMicrophoneStream() {
+  ensureMediaCaptureSupported();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: microphoneAudioConstraints(),
   });
@@ -64,6 +83,13 @@ async function createMicrophoneStream() {
 }
 
 async function createMeetingCaptureStream() {
+  ensureMediaCaptureSupported();
+  if (!navigator.mediaDevices.getDisplayMedia) {
+    captureMode.value = "microphone";
+    updateWorkflowUI();
+    setStatus("Meeting-tab capture is not available here. Recording microphone only.");
+    return createMicrophoneStream();
+  }
   const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
   const displayAudioTracks = displayStream.getAudioTracks();
   if (!displayAudioTracks.length) {
@@ -128,6 +154,20 @@ function getRecorderOptions() {
 
 function recordingFilename(mimeType) {
   return mimeType.includes("mp4") ? "meeting-recording.mp4" : "meeting-recording.webm";
+}
+
+function configureCaptureAvailability() {
+  if (!captureMode) return;
+  const meetingOption = [...captureMode.options].find((option) => option.value === "meeting");
+  const displayCaptureAvailable = Boolean(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  if (meetingOption) meetingOption.disabled = !displayCaptureAvailable;
+  if (!displayCaptureAvailable && captureMode.value === "meeting") {
+    captureMode.value = "microphone";
+  }
+  const unavailableReason = mediaCaptureUnavailableReason();
+  if (unavailableReason && !document.body.classList.contains("auth-pending")) {
+    setStatus(unavailableReason);
+  }
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────

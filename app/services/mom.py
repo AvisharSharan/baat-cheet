@@ -21,16 +21,18 @@ class MomGenerationClient:
         base_url: str | None = None,
     ) -> None:
         self.provider = os.getenv("MOM_PROVIDER", "ollama").strip().lower()
-        self.api_key = api_key or os.getenv("MOM_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+        self.api_key = api_key or _mom_api_key(self.provider)
         self.model = model or _mom_model(self.provider)
-        self.base_url = (base_url or _mom_base_url(self.provider)).rstrip("/")
+        self.base_url = (base_url or _mom_base_url(self.provider)).strip().rstrip("/")
         self.max_tokens = _env_int("MOM_MAX_TOKENS", _env_int("HF_MOM_MAX_TOKENS", 1200))
         self.timeout_s = _env_int("MOM_TIMEOUT_S", _env_int("HF_MOM_TIMEOUT_S", 240))
         self.retries = _env_int("MOM_RETRIES", _env_int("HF_MOM_RETRIES", 2))
-        if self.provider not in {"ollama", "huggingface", "openai-compatible"}:
-            raise MomGenerationError("MOM_PROVIDER must be one of: ollama, huggingface, openai-compatible.")
-        if self.provider in {"huggingface", "openai-compatible"} and not self.api_key:
-            raise MomGenerationError("MOM_API_KEY or HF_TOKEN is not configured.")
+        if self.provider not in {"ollama", "huggingface", "openai-compatible", "hosted"}:
+            raise MomGenerationError("MOM_PROVIDER must be one of: ollama, huggingface, openai-compatible, hosted.")
+        if self.provider != "ollama" and not self.api_key:
+            raise MomGenerationError(_missing_key_message(self.provider))
+        if self.provider == "hosted" and not self.base_url:
+            raise MomGenerationError("HOSTED_AI_URL is not configured.")
 
     async def generate(
         self,
@@ -65,9 +67,11 @@ class MomGenerationClient:
 
     async def _post_chat(self, prompt: str) -> httpx.Response:
         payload = self._payload(prompt)
-        url = f"{self.base_url}/api/chat" if self.provider == "ollama" else f"{self.base_url}/chat/completions"
+        url = self._chat_url()
         headers = {}
-        if self.provider != "ollama":
+        if self.provider == "hosted":
+            headers["X-API-Key"] = self.api_key or ""
+        elif self.provider != "ollama":
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         last_response = None
@@ -105,48 +109,13 @@ class MomGenerationClient:
             "max_tokens": self.max_tokens,
             "messages": messages,
         }
-    async def _post_chat(self, prompt: str) -> httpx.Response:
-        payload = self._payload(prompt)
-        url = f"{self.base_url}/api/chat" if self.provider == "ollama" else f"{self.base_url}/chat/completions"
-        headers = {}
-        if self.provider != "ollama":
-            headers["Authorization"] = f"Bearer {self.api_key}"
 
-        last_response = None
-        async with httpx.AsyncClient(timeout=self.timeout_s) as client:
-            for attempt in range(self.retries + 1):
-                response = await client.post(url, headers=headers, json=payload)
-                if response.status_code not in {502, 503, 504}:
-                    return response
-                last_response = response
-                if attempt < self.retries:  # only sleep between attempts, not after the last one
-                    await asyncio.sleep(2 ** (attempt + 1))
-        return last_response
-
-    def _payload(self, prompt: str) -> dict:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
+    def _chat_url(self) -> str:
         if self.provider == "ollama":
-            options = {
-                "temperature": 0.1,
-                "num_ctx": _env_int("OLLAMA_NUM_CTX", 32768),
-                "num_predict": self.max_tokens,
-                "num_gpu": _env_int("OLLAMA_NUM_GPU", 0),
-            }
-            return {
-                "model": self.model,
-                "stream": False,
-                "options": options,
-                "messages": messages,
-            }
-        return {
-            "model": self.model,
-            "temperature": 0.1,
-            "max_tokens": self.max_tokens,
-            "messages": messages,
-        }
+            return f"{self.base_url}/api/chat"
+        if self.provider == "hosted":
+            return self.base_url
+        return f"{self.base_url}/chat/completions"
 
 
 HuggingFaceGemmaMomClient = MomGenerationClient
@@ -316,13 +285,29 @@ def _env_int(name: str, default: int) -> int:
 def _mom_model(provider: str) -> str:
     if provider == "ollama":
         return os.getenv("MOM_MODEL") or os.getenv("OLLAMA_MOM_MODEL", "qwen2.5:7b")
+    if provider == "hosted":
+        return os.getenv("MOM_MODEL") or os.getenv("HOSTED_AI_MODEL", "deepseek-ai/DeepSeek-V4-Flash")
     return os.getenv("MOM_MODEL") or os.getenv("HF_MOM_MODEL", "google/gemma-3-27b-it")
 
 
 def _mom_base_url(provider: str) -> str:
     if provider == "ollama":
         return os.getenv("MOM_BASE_URL") or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    if provider == "hosted":
+        return os.getenv("MOM_BASE_URL") or os.getenv("HOSTED_AI_URL", "")
     return os.getenv("MOM_BASE_URL") or os.getenv("HF_CHAT_BASE_URL", "https://router.huggingface.co/v1")
+
+
+def _mom_api_key(provider: str) -> str | None:
+    if provider == "hosted":
+        return os.getenv("HOSTED_AI_API_KEY") or os.getenv("MOM_API_KEY")
+    return os.getenv("MOM_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+
+
+def _missing_key_message(provider: str) -> str:
+    if provider == "hosted":
+        return "HOSTED_AI_API_KEY is not configured."
+    return "MOM_API_KEY or HF_TOKEN is not configured."
 
 
 def _normalize_mom_markdown(markdown: str) -> str:
@@ -382,8 +367,8 @@ def _response_error_detail(response: httpx.Response) -> str:
         return str(error or data)[:500]
     if response.status_code == 504:
         return (
-            "Gateway timeout from Hugging Face Inference Providers. "
-            "The selected MoM model/provider did not respond in time. "
-            "Try a smaller HF_MOM_MODEL or retry shortly."
+            "Gateway timeout from the selected MoM provider. "
+            "The selected model did not respond in time. "
+            "Try a smaller model or retry shortly."
         )
     return response.text[:500]

@@ -75,6 +75,7 @@ function showApp(username) {
   userChip.hidden = false;
   logoutBtn.hidden = false;
   setStatus("Ready");
+  if (typeof configureCaptureAvailability === "function") configureCaptureAvailability();
   loadHistory();
 }
 
