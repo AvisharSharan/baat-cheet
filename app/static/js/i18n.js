@@ -277,6 +277,7 @@ function setLanguage(lang) {
   
   // Update all elements with data-i18n
   document.querySelectorAll("[data-i18n]").forEach(el => {
+    if (el.id === "momOutput" && !el.classList.contains("mom-empty")) return;
     const key = el.dataset.i18n;
     const translation = i18nDict[lang][key];
     if (translation) {
