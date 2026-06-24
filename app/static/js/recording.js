@@ -1,5 +1,11 @@
 // ─── RECORDING ────────────────────────────────────────────────
 async function startRecording() {
+  if (isStartingRecording || (recorder && recorder.state === "recording")) return;
+  isStartingRecording = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = true;
+  setStatus("Starting recording...");
+
   try {
     const stream = captureMode.value === "meeting"
       ? await createMeetingCaptureStream()
@@ -20,16 +26,38 @@ async function startRecording() {
         isFinalizingRecording = false;
       }
     };
-    const useLiveCaptions = await shouldUseLiveCaptions();
-    if (useLiveCaptions) await startLiveTranscription(stream);
-    recorder.start();
-    setStatus(useLiveCaptions ? "Recording - live captions" : "Recording");
+    recorder.start(1000);
     setRecordingState(true);
+    isStartingRecording = false;
+    setStatus("Recording");
+    startLiveCaptionsIfEnabled(stream);
   } catch (error) {
+    isStartingRecording = false;
     stopActiveCapture();
     setStatus(error.message || "Could not start recording");
     updateWorkflowUI();
     stopBtn.disabled = true;
+  }
+}
+
+async function startLiveCaptionsIfEnabled(stream) {
+  const sessionRecorder = recorder;
+  try {
+    const useLiveCaptions = await shouldUseLiveCaptions();
+    if (!useLiveCaptions) return;
+    if (!sessionRecorder || sessionRecorder.state !== "recording" || recorder !== sessionRecorder) return;
+    setStatus("Recording - starting live captions...");
+    await startLiveTranscription(stream);
+    if (sessionRecorder.state === "recording" && recorder === sessionRecorder) {
+      setStatus("Recording - live captions");
+    } else {
+      await stopLiveTranscription();
+    }
+  } catch (error) {
+    await stopLiveTranscription();
+    if (sessionRecorder && sessionRecorder.state === "recording" && recorder === sessionRecorder) {
+      setStatus(`Recording - live captions unavailable: ${error.message || "connection failed"}`);
+    }
   }
 }
 
@@ -77,20 +105,21 @@ function stopRecording() {
 async function startLiveTranscription(stream) {
   liveSocket = await createLiveSocket();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  liveAudioContext = new AudioContextClass();
-  await liveAudioContext.audioWorklet.addModule("/static/pcm-worklet.js");
+  const audioContext = new AudioContextClass();
+  liveAudioContext = audioContext;
+  await audioContext.audioWorklet.addModule("/static/pcm-worklet.js");
 
-  const source = liveAudioContext.createMediaStreamSource(stream);
-  const processor = new AudioWorkletNode(liveAudioContext, "pcm-capture-processor");
-  const mutedOutput = liveAudioContext.createGain();
+  const source = audioContext.createMediaStreamSource(stream);
+  const processor = new AudioWorkletNode(audioContext, "pcm-capture-processor");
+  const mutedOutput = audioContext.createGain();
   mutedOutput.gain.value = 0;
   processor.port.onmessage = (event) => {
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-    const pcm = downsampleToPcm16(event.data, liveAudioContext.sampleRate, liveSampleRate);
+    const pcm = downsampleToPcm16(event.data, audioContext.sampleRate, liveSampleRate);
     if (pcm.byteLength > 0) liveSocket.send(pcm);
   };
   source.connect(processor);
-  processor.connect(mutedOutput).connect(liveAudioContext.destination);
+  processor.connect(mutedOutput).connect(audioContext.destination);
   liveAudioNodes = [source, processor, mutedOutput];
 }
 
@@ -133,6 +162,14 @@ async function stopLiveTranscription(options = {}) {
     });
   }
   if (socket && socket.readyState === WebSocket.OPEN) socket.send("stop");
+  if (
+    socket
+    && !waitForFinalChunk
+    && socket.readyState !== WebSocket.CLOSED
+    && socket.readyState !== WebSocket.CLOSING
+  ) {
+    socket.close();
+  }
   if (liveAudioContext) {
     liveAudioNodes.forEach((node) => { try { node.disconnect(); } catch (error) {} });
     liveAudioNodes = [];
@@ -165,22 +202,22 @@ function inferredSpeakerCount() {
 
 async function shouldUseLiveCaptions() {
   if (!liveCaptionsToggle.checked) return false;
-  const engine = await currentSpeechEngine();
+  const engine = await getCurrentSpeechEngine();
   if (engine === "sarvam" && !speakerLabelsToggle.checked) return false;
   return true;
 }
 
-async function currentSpeechEngine() {
-  if (window.currentSpeechEngine) return window.currentSpeechEngine;
+async function getCurrentSpeechEngine() {
+  if (window.currentSpeechEngineValue) return window.currentSpeechEngineValue;
   try {
     const response = await apiFetch("/api/settings");
     if (!response.ok) return "open-source";
     const settings = await response.json();
-    window.currentSpeechEngine = settings.transcription_provider === "sarvam" ? "sarvam" : "open-source";
+    window.currentSpeechEngineValue = settings.transcription_provider === "sarvam" ? "sarvam" : "open-source";
   } catch (error) {
-    window.currentSpeechEngine = "open-source";
+    window.currentSpeechEngineValue = "open-source";
   }
-  return window.currentSpeechEngine;
+  return window.currentSpeechEngineValue;
 }
 
 async function uploadMeetingFile(file, filename) {
@@ -674,6 +711,7 @@ function updateWorkflowUI() {
   const recorded = workflowMode.value === "recorded";
   const recording = recorder && recorder.state === "recording";
   const speakerLabelsEnabled = speakerLabelsToggle.checked;
+  const mediaUnavailable = typeof mediaCaptureUnavailableReason === "function" && Boolean(mediaCaptureUnavailableReason());
 
   realtimeOnly.hidden = recorded;
   recordedOnly.hidden = !recorded;
@@ -688,7 +726,7 @@ function updateWorkflowUI() {
   liveCaptionsToggle.disabled = recorded || Boolean(recording);
   speakerLabelsToggle.disabled = Boolean(recording);
   speakerCount.disabled = Boolean(recording) || !speakerLabelsEnabled;
-  startBtn.disabled = recorded || Boolean(recording);
+  startBtn.disabled = recorded || Boolean(recording) || mediaUnavailable;
   uploadRecordedBtn.disabled = !recorded || !recordedFile.files.length;
   recordedFile.disabled = false;
 
@@ -713,13 +751,14 @@ function updateWorkflowUI() {
 
 function setUploadBusy(busy) {
   const recorded = workflowMode.value === "recorded";
+  const mediaUnavailable = typeof mediaCaptureUnavailableReason === "function" && Boolean(mediaCaptureUnavailableReason());
   workflowMode.disabled = busy || (recorder && recorder.state === "recording");
   captureMode.disabled = busy || recorded;
   microphoneDevice.disabled = busy || recorded;
   liveCaptionsToggle.disabled = busy || recorded;
   speakerLabelsToggle.disabled = busy;
   speakerCount.disabled = busy || !speakerLabelsToggle.checked;
-  startBtn.disabled = busy || recorded;
+  startBtn.disabled = busy || recorded || mediaUnavailable;
   uploadRecordedBtn.disabled = busy || !recorded || !recordedFile.files.length;
   recordedFile.disabled = busy;
 }

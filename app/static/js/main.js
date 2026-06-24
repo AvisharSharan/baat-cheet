@@ -3,6 +3,7 @@ if (window.innerWidth <= 768) {
   workspace.classList.add("collapsed");
 }
 modeBtns.forEach(btn => btn.addEventListener("click", () => setWorkflowMode(btn.dataset.mode)));
+captureMode.addEventListener("change", updateWorkflowUI);
 recordedFile.addEventListener("change", onFileChange);
 liveCaptionsToggle.addEventListener("change", updateLiveCaptionPreference);
 speakerLabelsToggle.addEventListener("change", updateSpeakerLabelPreference);
@@ -42,6 +43,7 @@ fileDropZone.addEventListener("drop", (e) => {
 
 syncThemeToggle();
 syncLiveCaptionPreference();
+configureCaptureAvailability();
 updateWorkflowUI();
 meetingName.value = defaultMeetingName();
 bootstrapAuth();

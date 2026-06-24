@@ -11,6 +11,7 @@ var liveTranscript = [];
 var recordingUrl = null;
 var recTimerInterval = null;
 var recStartTime = null;
+var isStartingRecording = false;
 var isFinalizingRecording = false;
 var editingTranscriptIndex = null;
 var liveSampleRate = 16000;
