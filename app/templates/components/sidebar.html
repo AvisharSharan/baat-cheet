@@ -79,18 +79,7 @@
               <label class="field-label" for="speakerCount"><span data-i18n="setup.speakers">Expected speakers</span>
                 <span class="field-hint" data-i18n="setup.optional">optional</span>
               </label>
-              <div class="select-wrap">
-                <select id="speakerCount" aria-label="Speaker count">
-                  <option value="" data-i18n="setup.auto_detect">Auto-detect</option>
-                  <option value="1">1 speaker</option>
-                  <option value="2">2 speakers</option>
-                  <option value="3">3 speakers</option>
-                  <option value="4">4 speakers</option>
-                  <option value="5">5 speakers</option>
-                  <option value="6">6+ speakers</option>
-                </select>
-                <svg class="select-caret" width="11" height="11" viewBox="0 0 11 11"><path d="M2 4l3.5 3.5L9 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </div>
+              <input id="speakerCount" type="number" min="1" max="10" step="1" inputmode="numeric" aria-label="Speaker count" placeholder="Auto-detect" data-i18n="setup.auto_detect" />
             </div>
 
             <label class="toggle-row" for="speakerLabelsToggle">

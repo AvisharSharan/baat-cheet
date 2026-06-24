@@ -195,8 +195,10 @@ async function uploadRecordedFile() {
 }
 
 function inferredSpeakerCount() {
-  const selected = Number(speakerCount.value);
-  if (Number.isInteger(selected) && selected >= 1) return selected;
+  const rawValue = speakerCount.value.trim();
+  if (!rawValue) return NaN;
+  const selected = Number(rawValue);
+  if (Number.isInteger(selected) && selected >= 1 && selected <= 10) return selected;
   return NaN;
 }
 
@@ -224,6 +226,10 @@ async function uploadMeetingFile(file, filename) {
   const form = new FormData();
   form.append("audio", file, filename);
   const expectedSpeakers = inferredSpeakerCount();
+  if (speakerLabelsToggle.checked && speakerCount.value.trim() && !Number.isInteger(expectedSpeakers)) {
+    setStatus("Expected speakers must be a whole number from 1 to 10");
+    return;
+  }
   if (speakerLabelsToggle.checked && Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 10) {
     form.append("num_speakers", String(expectedSpeakers));
   }
@@ -679,7 +685,9 @@ function resetSessionOutput() {
   clearRecordingPlayback();
   exportLinks.innerHTML = "";
   momOutput.className = "mom mom-empty";
-  momOutput.textContent = "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";
+  momOutput.textContent = typeof t === "function"
+    ? t("meet.empty_mom")
+    : "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";
   cancelActionBtn.hidden = true;
   cancelActionBtn.disabled = true;
   renderTranscript([], {});
