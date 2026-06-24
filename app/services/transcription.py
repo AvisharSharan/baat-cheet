@@ -7,6 +7,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -647,7 +648,10 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
         compute_type,
         {
             "beam_size": _env_int("LIVE_WHISPER_BEAM_SIZE", 1),
-            "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", False),
+            "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", True),
+            "no_speech_threshold": _env_float("LIVE_WHISPER_NO_SPEECH_THRESHOLD", 0.65),
+            "log_prob_threshold": _env_float("LIVE_WHISPER_LOG_PROB_THRESHOLD", -1.0),
+            "compression_ratio_threshold": _env_float("LIVE_WHISPER_COMPRESSION_RATIO_THRESHOLD", 2.4),
             "condition_on_previous_text": False,
         },
         allow_cpu_fallback=True,
@@ -660,8 +664,37 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
             end_ms=int(segment.end * 1000),
         )
         for segment in segments
-        if getattr(segment, "text", "").strip()
+        if _is_usable_live_segment(segment)
     ]
+
+
+def _is_usable_live_segment(segment: Any) -> bool:
+    text = str(getattr(segment, "text", "") or "").strip()
+    if not text:
+        return False
+    if _looks_like_live_hallucination(text):
+        return False
+    no_speech_prob = getattr(segment, "no_speech_prob", None)
+    if isinstance(no_speech_prob, (int, float)) and no_speech_prob >= _env_float("LIVE_MAX_NO_SPEECH_PROB", 0.85):
+        return False
+    avg_logprob = getattr(segment, "avg_logprob", None)
+    if isinstance(avg_logprob, (int, float)) and avg_logprob <= _env_float("LIVE_MIN_AVG_LOGPROB", -1.2):
+        return False
+    return True
+
+
+def _looks_like_live_hallucination(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text)
+    if re.fullmatch(r"[0-9a-fA-F_-]{18,}", compact):
+        return True
+    if re.search(r"\b20\d{6}[_-][0-9a-fA-F-]{12,}\b", compact):
+        return True
+    alnum = re.sub(r"[^0-9A-Za-z]", "", compact)
+    if len(alnum) >= 18:
+        hexish = sum(1 for char in alnum if char.lower() in "0123456789abcdef")
+        if hexish / max(1, len(alnum)) > 0.85:
+            return True
+    return False
 
 
 def _transcribe_with_device_fallback(
@@ -1321,6 +1354,16 @@ def _env_int(name: str, default: int) -> int:
         return default
     try:
         return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
     except ValueError:
         return default
 
