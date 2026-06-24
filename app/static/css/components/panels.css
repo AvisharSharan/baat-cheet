@@ -131,6 +131,8 @@ h2 {
   letter-spacing: 0.04em;
 }
 
+.panel-badge[hidden] { display: none; }
+
 .waveform-strip,
 .text-flow-strip {
   display: none;
