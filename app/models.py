@@ -141,8 +141,12 @@ class MeetingStatusResponse(BaseModel):
 
 
 class SettingsResponse(BaseModel):
+    mom_provider: str = "ollama"
     ollama_base_url: str = ""
     ollama_model: str = ""
+    hosted_api_url: str = ""
+    hosted_api_model: str = "deepseek-ai/DeepSeek-V4-Flash"
+    hosted_api_configured: bool = False
     mom_max_tokens: str = "1200"
     ollama_num_ctx: str = "32768"
     ollama_num_gpu: str = "0"
@@ -162,8 +166,12 @@ class SettingsResponse(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
+    mom_provider: Optional[str] = None
     ollama_base_url: Optional[str] = None
     ollama_model: Optional[str] = None
+    hosted_api_url: Optional[str] = None
+    hosted_api_model: Optional[str] = None
+    hosted_api_key: Optional[str] = None
     mom_max_tokens: Optional[str] = None
     ollama_num_ctx: Optional[str] = None
     ollama_num_gpu: Optional[str] = None

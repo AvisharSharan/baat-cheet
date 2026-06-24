@@ -182,6 +182,15 @@ MOM_RETRIES=2
 Optional hosted or OpenAI-compatible minutes generation:
 
 ```env
+MOM_PROVIDER=hosted
+HOSTED_AI_URL=https://your-organization.example/chat/completions
+HOSTED_AI_API_KEY=your_hosted_api_key
+HOSTED_AI_MODEL=deepseek-ai/DeepSeek-V4-Flash
+```
+
+Legacy Hugging Face router setup:
+
+```env
 MOM_PROVIDER=huggingface
 HF_MOM_MODEL=google/gemma-3-27b-it
 HF_CHAT_BASE_URL=https://router.huggingface.co/v1
