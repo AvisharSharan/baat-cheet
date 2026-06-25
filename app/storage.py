@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Dict, List
+
 
 from .models import MeetingState
 
@@ -17,7 +17,7 @@ class MeetingStore:
     def __init__(self, path: str | Path | None = None) -> None:
         default_path = Path(os.getenv("MOM_MEETINGS_PATH", "data/meetings.json"))
         self._path = Path(path) if path is not None else default_path
-        self._meetings: Dict[str, MeetingState] = {}
+        self._meetings: dict[str, MeetingState] = {}
         self._lock = RLock()
         self._load()
 
@@ -52,14 +52,14 @@ class MeetingStore:
             self._save()
             return meeting.model_copy(deep=True)
 
-    def clear(self) -> List[MeetingState]:
+    def clear(self) -> list[MeetingState]:
         with self._lock:
             meetings = [meeting.model_copy(deep=True) for meeting in self._meetings.values()]
             self._meetings.clear()
             self._save()
             return meetings
 
-    def list(self) -> List[MeetingState]:
+    def list(self) -> list[MeetingState]:
         with self._lock:
             meetings = [
                 meeting.model_copy(deep=True)

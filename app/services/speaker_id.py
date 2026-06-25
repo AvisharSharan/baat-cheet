@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.utils import env_int, unlink_with_retry
 
 import asyncio
 import json
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock
-from typing import Dict, Iterable, List
+from typing import Iterable
 
 from app.models import SpeakerTurn
 
@@ -32,7 +33,7 @@ class VoiceProfileStore:
         self.path = Path(path or os.getenv("VOICE_PROFILE_STORE_PATH") or default_path)
         self._lock = RLock()
 
-    def load(self) -> Dict[str, List[float]]:
+    def load(self) -> dict[str, list[float]]:
         with self._lock:
             if not self.path.exists():
                 return {}
@@ -48,7 +49,7 @@ class VoiceProfileStore:
                 if isinstance(embedding, list) and embedding
             }
 
-    def save(self, profiles: Dict[str, List[float]]) -> None:
+    def save(self, profiles: dict[str, list[float]]) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
@@ -61,7 +62,7 @@ class VoiceProfileStore:
                 temp_path = Path(handle.name)
             temp_path.replace(self.path)
 
-    def upsert_many(self, labeled_embeddings: Dict[str, List[float]]) -> None:
+    def upsert_many(self, labeled_embeddings: dict[str, list[float]]) -> None:
         cleaned = {
             label.strip(): _normalize_vector(embedding)
             for label, embedding in labeled_embeddings.items()
@@ -87,15 +88,15 @@ class SpeakerIdentifier:
     ) -> None:
         self.profile_store = profile_store or VoiceProfileStore()
         self.threshold = threshold if threshold is not None else _env_float("VOICE_MATCH_THRESHOLD", 0.68)
-        self.min_segment_ms = min_segment_ms if min_segment_ms is not None else _env_int("VOICE_MIN_SEGMENT_MS", 900)
+        self.min_segment_ms = min_segment_ms if min_segment_ms is not None else env_int("VOICE_MIN_SEGMENT_MS", 900)
         self.max_seconds_per_speaker = (
             max_seconds_per_speaker if max_seconds_per_speaker is not None else _env_float("VOICE_MAX_SECONDS_PER_SPEAKER", 12.0)
         )
 
-    async def extract_speaker_embeddings(self, audio_path: str, transcript: List[SpeakerTurn]) -> Dict[str, List[float]]:
+    async def extract_speaker_embeddings(self, audio_path: str, transcript: list[SpeakerTurn]) -> dict[str, list[float]]:
         return await asyncio.to_thread(self._extract_speaker_embeddings_sync, audio_path, transcript)
 
-    def _extract_speaker_embeddings_sync(self, audio_path: str, transcript: List[SpeakerTurn]) -> Dict[str, List[float]]:
+    def _extract_speaker_embeddings_sync(self, audio_path: str, transcript: list[SpeakerTurn]) -> dict[str, list[float]]:
         if not voiceprinting_enabled():
             raise SpeakerIdentificationUnavailable("Voiceprinting is disabled. Set VOICEPRINTING_ENABLED=1 to enable it.")
         if voiceprinting_worker_enabled():
@@ -103,14 +104,14 @@ class SpeakerIdentifier:
 
         return self._extract_speaker_embeddings_direct(audio_path, transcript)
 
-    def _extract_speaker_embeddings_direct(self, audio_path: str, transcript: List[SpeakerTurn]) -> Dict[str, List[float]]:
+    def _extract_speaker_embeddings_direct(self, audio_path: str, transcript: list[SpeakerTurn]) -> dict[str, list[float]]:
         turns_by_speaker = _group_usable_turns(transcript, self.min_segment_ms)
         if not turns_by_speaker:
             return {}
 
         backend = _EmbeddingBackend.load()
         waveform, sample_rate = backend.load_audio(audio_path)
-        speaker_embeddings: Dict[str, List[float]] = {}
+        speaker_embeddings: dict[str, list[float]] = {}
         for speaker, turns in turns_by_speaker.items():
             segment = _collect_speaker_audio(waveform, sample_rate, turns, self.max_seconds_per_speaker)
             if segment is None:
@@ -118,7 +119,7 @@ class SpeakerIdentifier:
             speaker_embeddings[speaker] = backend.embed(segment, sample_rate)
         return speaker_embeddings
 
-    def _extract_speaker_embeddings_worker(self, audio_path: str, transcript: List[SpeakerTurn]) -> Dict[str, List[float]]:
+    def _extract_speaker_embeddings_worker(self, audio_path: str, transcript: list[SpeakerTurn]) -> dict[str, list[float]]:
         repo_root = Path(__file__).resolve().parents[2]
         timeout_s = _env_float("VOICEPRINTING_WORKER_TIMEOUT_S", 180.0)
         env = os.environ.copy()
@@ -181,15 +182,15 @@ class SpeakerIdentifier:
             if isinstance(embedding, list) and embedding
         }
 
-    def label_speakers(self, speaker_embeddings: Dict[str, List[float]], fallback_labels: Iterable[str]) -> Dict[str, str]:
+    def label_speakers(self, speaker_embeddings: dict[str, list[float]], fallback_labels: Iterable[str]) -> dict[str, str]:
         profiles = self.profile_store.load()
-        labels: Dict[str, str] = {}
+        labels: dict[str, str] = {}
         for speaker in fallback_labels:
             match = self.match(speaker_embeddings.get(speaker), profiles)
             labels[speaker] = match.label if match else speaker
         return labels
 
-    def best_match_scores(self, speaker_embeddings: Dict[str, List[float]]) -> Dict[str, float]:
+    def best_match_scores(self, speaker_embeddings: dict[str, list[float]]) -> dict[str, float]:
         profiles = self.profile_store.load()
         return {
             speaker: round(match.score, 3)
@@ -197,13 +198,13 @@ class SpeakerIdentifier:
             if (match := self._best_match(embedding, profiles)) is not None
         }
 
-    def match(self, embedding: List[float] | None, profiles: Dict[str, List[float]] | None = None) -> SpeakerMatch | None:
+    def match(self, embedding: list[float] | None, profiles: dict[str, list[float]] | None = None) -> SpeakerMatch | None:
         best = self._best_match(embedding, profiles)
         if best and best.score >= self.threshold:
             return best
         return None
 
-    def _best_match(self, embedding: List[float] | None, profiles: Dict[str, List[float]] | None = None) -> SpeakerMatch | None:
+    def _best_match(self, embedding: list[float] | None, profiles: dict[str, list[float]] | None = None) -> SpeakerMatch | None:
         if not embedding:
             return None
         candidates = profiles if profiles is not None else self.profile_store.load()
@@ -214,7 +215,7 @@ class SpeakerIdentifier:
                 best = SpeakerMatch(label=label, score=score)
         return best
 
-    def remember_labels(self, speaker_embeddings: Dict[str, List[float]], speaker_names: Dict[str, str]) -> None:
+    def remember_labels(self, speaker_embeddings: dict[str, list[float]], speaker_names: dict[str, str]) -> None:
         labeled_embeddings = {
             label: speaker_embeddings[speaker]
             for speaker, label in speaker_names.items()
@@ -307,9 +308,9 @@ class _EmbeddingBackend:
                 raise SpeakerIdentificationUnavailable(f"Voiceprinting could not decode the recording: {detail[-800:]}")
             return self.torchaudio.load(str(wav_path))
         finally:
-            _unlink_with_retry(wav_path)
+            unlink_with_retry(wav_path)
 
-    def embed(self, waveform, sample_rate: int) -> List[float]:
+    def embed(self, waveform, sample_rate: int) -> list[float]:
         if sample_rate != 16000:
             waveform = self.torchaudio.functional.resample(waveform, sample_rate, 16000)
         with self.torch.no_grad():
@@ -322,8 +323,8 @@ def _normalize_speechbrain_device(device: str) -> str:
     return "cuda:0" if selected.lower() == "cuda" else selected
 
 
-def _group_usable_turns(transcript: List[SpeakerTurn], min_segment_ms: int) -> Dict[str, List[SpeakerTurn]]:
-    grouped: Dict[str, List[SpeakerTurn]] = {}
+def _group_usable_turns(transcript: list[SpeakerTurn], min_segment_ms: int) -> dict[str, list[SpeakerTurn]]:
+    grouped: dict[str, list[SpeakerTurn]] = {}
     for turn in transcript:
         if turn.start_ms is None or turn.end_ms is None:
             continue
@@ -333,7 +334,7 @@ def _group_usable_turns(transcript: List[SpeakerTurn], min_segment_ms: int) -> D
     return grouped
 
 
-def _collect_speaker_audio(waveform, sample_rate: int, turns: List[SpeakerTurn], max_seconds: float):
+def _collect_speaker_audio(waveform, sample_rate: int, turns: list[SpeakerTurn], max_seconds: float):
     torch = _EmbeddingBackend.load().torch
     segments = []
     total_samples = 0
@@ -356,7 +357,7 @@ def _collect_speaker_audio(waveform, sample_rate: int, turns: List[SpeakerTurn],
     return torch.cat(segments)
 
 
-def _mean_vectors(vectors: Iterable[List[float] | None]) -> List[float]:
+def _mean_vectors(vectors: Iterable[list[float] | None]) -> list[float]:
     usable = [vector for vector in vectors if vector]
     if not usable:
         return []
@@ -374,14 +375,14 @@ def _mean_vectors(vectors: Iterable[List[float] | None]) -> List[float]:
     return _normalize_vector([value / count for value in totals])
 
 
-def _normalize_vector(vector: List[float]) -> List[float]:
+def _normalize_vector(vector: list[float]) -> list[float]:
     norm = math.sqrt(sum(value * value for value in vector))
     if norm <= 0:
         return vector
     return [float(value / norm) for value in vector]
 
 
-def _cosine_similarity(left: List[float], right: List[float]) -> float:
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
     """Dot product of two pre-normalized unit vectors equals cosine similarity.
 
     All embeddings are normalized before being stored (via _normalize_vector in
@@ -394,7 +395,7 @@ def _cosine_similarity(left: List[float], right: List[float]) -> float:
     return sum(a * b for a, b in zip(left, right))
 
 
-def _best_embedding_match(embedding: List[float] | None, candidates: Dict[str, List[float]]) -> SpeakerMatch | None:
+def _best_embedding_match(embedding: list[float] | None, candidates: dict[str, list[float]]) -> SpeakerMatch | None:
     if not embedding:
         return None
     best: SpeakerMatch | None = None
@@ -405,7 +406,7 @@ def _best_embedding_match(embedding: List[float] | None, candidates: Dict[str, L
     return best
 
 
-def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
+def unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
     for attempt in range(attempts):
         try:
             path.unlink(missing_ok=True)
@@ -428,7 +429,7 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None:
         return default

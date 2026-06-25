@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.utils import env_int
 
 import asyncio
 import os
-from typing import Dict, List
+
 
 import httpx
 
@@ -24,9 +25,9 @@ class MomGenerationClient:
         self.api_key = api_key or _mom_api_key(self.provider)
         self.model = model or _mom_model(self.provider)
         self.base_url = (base_url or _mom_base_url(self.provider)).strip().rstrip("/")
-        self.max_tokens = _env_int("MOM_MAX_TOKENS", _env_int("HF_MOM_MAX_TOKENS", 1200))
-        self.timeout_s = _env_int("MOM_TIMEOUT_S", _env_int("HF_MOM_TIMEOUT_S", 240))
-        self.retries = _env_int("MOM_RETRIES", _env_int("HF_MOM_RETRIES", 2))
+        self.max_tokens = env_int("MOM_MAX_TOKENS", env_int("HF_MOM_MAX_TOKENS", 1200))
+        self.timeout_s = env_int("MOM_TIMEOUT_S", env_int("HF_MOM_TIMEOUT_S", 240))
+        self.retries = env_int("MOM_RETRIES", env_int("HF_MOM_RETRIES", 2))
         if self.provider not in {"ollama", "huggingface", "openai-compatible", "hosted"}:
             raise MomGenerationError("MOM_PROVIDER must be one of: ollama, huggingface, openai-compatible, hosted.")
         if self.provider != "ollama" and not self.api_key:
@@ -36,8 +37,8 @@ class MomGenerationClient:
 
     async def generate(
         self,
-        transcript: List[SpeakerTurn],
-        speaker_names: Dict[str, str],
+        transcript: list[SpeakerTurn],
+        speaker_names: dict[str, str],
         *,
         speaker_labels_enabled: bool = True,
         mom_type: str = "auto",
@@ -93,9 +94,9 @@ class MomGenerationClient:
         if self.provider == "ollama":
             options = {
                 "temperature": 0.1,
-                "num_ctx": _env_int("OLLAMA_NUM_CTX", 32768),
+                "num_ctx": env_int("OLLAMA_NUM_CTX", 32768),
                 "num_predict": self.max_tokens,
-                "num_gpu": _env_int("OLLAMA_NUM_GPU", 0),
+                "num_gpu": env_int("OLLAMA_NUM_GPU", 0),
             }
             return {
                 "model": self.model,
@@ -146,8 +147,8 @@ Style constraints — never violate these:
 
 
 def build_mom_prompt(
-    transcript: List[SpeakerTurn],
-    speaker_names: Dict[str, str],
+    transcript: list[SpeakerTurn],
+    speaker_names: dict[str, str],
     *,
     speaker_labels_enabled: bool = True,
     mom_type: str = "auto",
@@ -166,7 +167,7 @@ def build_mom_prompt(
     # Rough heuristic: ~3.5 characters per token for English text.
     import logging as _logging
     _logger = _logging.getLogger(__name__)
-    num_ctx = _env_int("OLLAMA_NUM_CTX", 32768)
+    num_ctx = env_int("OLLAMA_NUM_CTX", 32768)
     estimated_tokens = len(transcript_text) / 3.5
     if estimated_tokens > num_ctx * 0.85:
         _logger.warning(
@@ -272,7 +273,7 @@ def _mom_type_instruction(mom_type: str) -> str:
     return instructions.get(normalized, instructions["auto"])
 
 
-def _env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None:
         return default

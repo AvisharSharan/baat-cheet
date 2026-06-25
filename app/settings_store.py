@@ -14,7 +14,7 @@ import logging
 import os
 from pathlib import Path
 from threading import RLock
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ _SETTINGS_PATH = Path(os.getenv("MOM_SETTINGS_PATH", "data/settings.json"))
 _lock = RLock()
 
 # ── schema: key → (env-var name, default value) ─────────────────────
-_SCHEMA: Dict[str, tuple[str, str]] = {
+_SCHEMA: dict[str, tuple[str, str]] = {
     # Ollama / LLM
     "mom_provider":      ("MOM_PROVIDER",          "ollama"),
     "ollama_base_url":   ("OLLAMA_BASE_URL",       "http://127.0.0.1:11434"),
@@ -54,7 +54,7 @@ _SCHEMA: Dict[str, tuple[str, str]] = {
 _SENSITIVE_KEYS = {"hosted_api_key"}
 
 
-def _read_file() -> Dict[str, str]:
+def _read_file() -> dict[str, str]:
     """Read the settings file, returning an empty dict on failure."""
     if not _SETTINGS_PATH.exists():
         return {}
@@ -65,7 +65,7 @@ def _read_file() -> Dict[str, str]:
         return {}
 
 
-def _write_file(data: Dict[str, str]) -> None:
+def _write_file(data: dict[str, str]) -> None:
     """Atomically write settings to disk."""
     _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = _SETTINGS_PATH.with_suffix(".tmp")
@@ -73,7 +73,7 @@ def _write_file(data: Dict[str, str]) -> None:
     tmp.replace(_SETTINGS_PATH)
 
 
-def load_settings(*, include_secrets: bool = False) -> Dict[str, Any]:
+def load_settings(*, include_secrets: bool = False) -> dict[str, Any]:
     """Return settings and mirror resolved values into ``os.environ``."""
     with _lock:
         saved = _read_file()
@@ -82,7 +82,7 @@ def load_settings(*, include_secrets: bool = False) -> Dict[str, Any]:
         return _public_settings(result) if not include_secrets else result
 
 
-def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
+def save_settings(updates: dict[str, Any]) -> dict[str, Any]:
     """Persist *updates* and patch ``os.environ`` so services pick up changes."""
     with _lock:
         current = _read_file()
@@ -98,21 +98,21 @@ def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
     return load_settings()
 
 
-def _resolve_settings(saved: Dict[str, str]) -> Dict[str, Any]:
-    result: Dict[str, Any] = {}
+def _resolve_settings(saved: dict[str, str]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
     for key, (env_var, default) in _SCHEMA.items():
         result[key] = saved.get(key) or os.getenv(env_var, default)
     return result
 
 
-def _apply_to_environment(settings: Dict[str, Any]) -> None:
+def _apply_to_environment(settings: dict[str, Any]) -> None:
     for key, value in settings.items():
         if key not in _SCHEMA:
             continue
         os.environ[_SCHEMA[key][0]] = str(value)
 
 
-def _public_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+def _public_settings(settings: dict[str, Any]) -> dict[str, Any]:
     public = {key: value for key, value in settings.items() if key not in _SENSITIVE_KEYS}
     public["hosted_api_configured"] = bool(str(settings.get("hosted_api_key") or "").strip())
     return public

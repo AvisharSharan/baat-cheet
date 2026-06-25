@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional
+
 
 from pydantic import BaseModel, Field
 
@@ -21,8 +21,8 @@ class MeetingStatus(str, Enum):
 class SpeakerTurn(BaseModel):
     speaker: str
     text: str
-    start_ms: Optional[int] = None
-    end_ms: Optional[int] = None
+    start_ms: int | None = None
+    end_ms: int | None = None
 
 
 class MeetingState(BaseModel):
@@ -31,22 +31,22 @@ class MeetingState(BaseModel):
     status: MeetingStatus
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    audio_path: Optional[str] = None
-    num_speakers: Optional[int] = None
+    completed_at: datetime | None = None
+    audio_path: str | None = None
+    num_speakers: int | None = None
     speaker_labels_enabled: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     visible_in_history: bool = True
-    transcript: List[SpeakerTurn] = Field(default_factory=list)
-    speaker_names: Dict[str, str] = Field(default_factory=dict)
-    speaker_embeddings: Dict[str, List[float]] = Field(default_factory=dict)
+    transcript: list[SpeakerTurn] = Field(default_factory=list)
+    speaker_names: dict[str, str] = Field(default_factory=dict)
+    speaker_embeddings: dict[str, list[float]] = Field(default_factory=dict)
     voiceprint_status: str = "pending"
-    voiceprint_error: Optional[str] = None
-    mom_markdown: Optional[str] = None
+    voiceprint_error: str | None = None
+    mom_markdown: str | None = None
 
 
 class SpeakerUpdate(BaseModel):
-    speakers: Dict[str, str]
+    speakers: dict[str, str]
     remember_voices: bool = False
 
 
@@ -71,8 +71,8 @@ class MeetingHistoryItem(BaseModel):
     status: MeetingStatus
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime] = None
-    speakers: List[str] = Field(default_factory=list)
+    completed_at: datetime | None = None
+    speakers: list[str] = Field(default_factory=list)
     transcript_turns: int = 0
     word_count: int = 0
     mom_available: bool = False
@@ -107,15 +107,15 @@ class MeetingStatusResponse(BaseModel):
     status: MeetingStatus
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-    transcript: List[SpeakerTurn] = Field(default_factory=list)
-    speaker_names: Dict[str, str] = Field(default_factory=dict)
+    completed_at: datetime | None = None
+    error: str | None = None
+    transcript: list[SpeakerTurn] = Field(default_factory=list)
+    speaker_names: dict[str, str] = Field(default_factory=dict)
     speaker_labels_enabled: bool = True
     voiceprints_ready: bool = False
     voiceprint_status: str = "pending"
-    voiceprint_error: Optional[str] = None
-    mom_markdown: Optional[str] = None
+    voiceprint_error: str | None = None
+    mom_markdown: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -167,28 +167,28 @@ class SettingsResponse(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
-    mom_provider: Optional[str] = None
-    ollama_base_url: Optional[str] = None
-    ollama_model: Optional[str] = None
-    hosted_api_url: Optional[str] = None
-    hosted_api_model: Optional[str] = None
-    hosted_api_key: Optional[str] = None
-    mom_max_tokens: Optional[str] = None
-    ollama_num_ctx: Optional[str] = None
-    ollama_num_gpu: Optional[str] = None
-    transcription_provider: Optional[str] = None
-    whisper_model: Optional[str] = None
-    whisper_device: Optional[str] = None
-    live_whisper_model: Optional[str] = None
-    indic_conformer_model: Optional[str] = None
-    indic_conformer_language: Optional[str] = None
-    indic_conformer_decoder: Optional[str] = None
-    indic_conformer_device: Optional[str] = None
-    sarvam_stt_model: Optional[str] = None
-    sarvam_stt_mode: Optional[str] = None
-    sarvam_language_code: Optional[str] = None
-    diarization_provider: Optional[str] = None
-    voiceprinting_enabled: Optional[str] = None
+    mom_provider: str | None = None
+    ollama_base_url: str | None = None
+    ollama_model: str | None = None
+    hosted_api_url: str | None = None
+    hosted_api_model: str | None = None
+    hosted_api_key: str | None = None
+    mom_max_tokens: str | None = None
+    ollama_num_ctx: str | None = None
+    ollama_num_gpu: str | None = None
+    transcription_provider: str | None = None
+    whisper_model: str | None = None
+    whisper_device: str | None = None
+    live_whisper_model: str | None = None
+    indic_conformer_model: str | None = None
+    indic_conformer_language: str | None = None
+    indic_conformer_decoder: str | None = None
+    indic_conformer_device: str | None = None
+    sarvam_stt_model: str | None = None
+    sarvam_stt_mode: str | None = None
+    sarvam_language_code: str | None = None
+    diarization_provider: str | None = None
+    voiceprinting_enabled: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
