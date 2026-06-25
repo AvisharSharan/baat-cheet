@@ -960,8 +960,29 @@ body[data-state="recording"] .record-dot {
 
 @media (max-width: 768px) {
   /* Topbar Adjustments */
+  .topbar {
+    flex-wrap: wrap;
+    padding: 12px;
+    gap: 12px;
+  }
+  .brand {
+    flex: 1;
+  }
   .brand h1 {
     font-size: 20px;
+  }
+  .topbar-right {
+    flex: 1;
+    gap: 4px;
+  }
+  .topnav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .topnav-btn {
+    flex: 1;
+    justify-content: center;
   }
   .global-status {
     margin-right: 8px;
