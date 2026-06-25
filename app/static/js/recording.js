@@ -341,6 +341,7 @@ function renderState(data) {
     setMomGenerating(false);
     momOutput.classList.remove("mom-empty");
     momOutput.textContent = data.mom_markdown;
+    editMomBtn.style.display = "inline-flex";
     exportLinks.innerHTML = `
       <a href="/api/meetings/${data.id}/export.md?token=${encodeURIComponent(authToken)}">
         <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
@@ -670,6 +671,39 @@ async function generateMom(options = {}) {
   if (!pollTimer) pollTimer = window.setInterval(pollStatus, 2500);
 }
 
+function editMom() {
+  if (momOutput.classList.contains("mom-empty")) return;
+  momOutput.style.display = "none";
+  momEditArea.style.display = "block";
+  momEditArea.value = momOutput.textContent;
+  editMomBtn.style.display = "none";
+  saveMomBtn.style.display = "inline-flex";
+}
+
+async function saveMom() {
+  if (!meetingId) return;
+  const newMarkdown = momEditArea.value;
+  saveMomBtn.disabled = true;
+  setStatus("Saving minutes…");
+  const response = await apiFetch(`/api/meetings/${meetingId}/mom`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ markdown: newMarkdown }),
+  });
+  saveMomBtn.disabled = false;
+  if (!response.ok) {
+    setStatus("Failed to save minutes");
+    return;
+  }
+  const data = await response.json();
+  renderState(data);
+  momEditArea.style.display = "none";
+  momOutput.style.display = "block";
+  saveMomBtn.style.display = "none";
+  editMomBtn.style.display = "inline-flex";
+  setStatus("");
+}
+
 async function cancelActiveAction() {
   if (!meetingId) return;
   cancelActionBtn.disabled = true;
@@ -737,6 +771,10 @@ function resetSessionOutput() {
   clearRecordingPlayback();
   exportLinks.innerHTML = "";
   momOutput.className = "mom mom-empty";
+  momOutput.style.display = "block";
+  momEditArea.style.display = "none";
+  editMomBtn.style.display = "none";
+  saveMomBtn.style.display = "none";
   momOutput.textContent = typeof t === "function"
     ? t("meet.empty_mom")
     : "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";

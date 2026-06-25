@@ -59,6 +59,10 @@ class MomGenerateRequest(BaseModel):
     mom_type: str = "auto"
 
 
+class MomUpdateRequest(BaseModel):
+    markdown: str
+
+
 class MeetingCreateResponse(BaseModel):
     id: str
     name: str

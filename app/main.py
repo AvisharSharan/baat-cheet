@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .auth import AuthTokenResponse, CurrentUser, LoginRequest, authenticate_user, change_password, create_access_token, current_user, user_from_authorization, user_from_token, websocket_user
-from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, SettingsResponse, SettingsUpdateRequest, SpeakerTurn, SpeakerUpdate, TranscriptUpdate
+from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistoryItem, MeetingState, MeetingStatus, MeetingStatusResponse, MomGenerateRequest, MomUpdateRequest, SettingsResponse, SettingsUpdateRequest, SpeakerTurn, SpeakerUpdate, TranscriptUpdate
 from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
@@ -429,6 +429,18 @@ async def update_transcript_turn(
     meeting.mom_markdown = None
     if meeting.status == MeetingStatus.READY:
         meeting.status = MeetingStatus.TRANSCRIBED
+    store.update(meeting)
+    return MeetingStatusResponse.from_state(meeting)
+
+
+@app.patch("/api/meetings/{meeting_id}/mom", response_model=MeetingStatusResponse)
+async def update_mom_markdown(
+    meeting_id: str,
+    update: MomUpdateRequest,
+    _: CurrentUser = Depends(current_user),
+) -> MeetingStatusResponse:
+    meeting = _get_meeting(meeting_id)
+    meeting.mom_markdown = update.markdown
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
 

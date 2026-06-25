@@ -11,6 +11,8 @@ startBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
 uploadRecordedBtn.addEventListener("click", uploadRecordedFile);
 momBtn.addEventListener("click", generateMom);
+editMomBtn.addEventListener("click", editMom);
+saveMomBtn.addEventListener("click", saveMom);
 cancelActionBtn.addEventListener("click", cancelActiveAction);
 saveSpeakersBtn.addEventListener("click", saveSpeakers);
 themeToggle.addEventListener("click", toggleTheme);
