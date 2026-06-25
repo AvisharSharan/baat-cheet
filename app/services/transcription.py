@@ -92,6 +92,11 @@ def sarvam_provider_selected(provider: str | None = None) -> bool:
     return selected in _SARVAM_PROVIDER_ALIASES
 
 
+def indic_provider_selected(provider: str | None = None) -> bool:
+    selected = (provider or os.getenv("TRANSCRIPTION_PROVIDER") or "local").strip().lower()
+    return selected in _INDIC_PROVIDER_ALIASES
+
+
 def preload_transcription_runtime() -> None:
     """Load and lightly warm the active local speech stack.
 
@@ -543,17 +548,34 @@ def _transcribe_with_indic_conformer(
         waveform = waveform.to(model_device)
 
     try:
-        with torch.inference_mode():
-            output = model(waveform, language, decoder)
+        output = _run_indic_conformer_model(model, waveform, language, decoder, torch)
     except Exception as exc:
         if device != "cpu":
             logger.warning("Indic Conformer failed on %s; retrying on CPU. Reason: %s", device, _short_error(exc))
             model = _get_indic_conformer_model(model_name, "cpu", hf_token)
-            with torch.inference_mode():
-                output = model(waveform.cpu(), language, decoder)
+            try:
+                output = _run_indic_conformer_model(model, waveform.cpu(), language, decoder, torch)
+            except Exception as cpu_exc:
+                raise _indic_conformer_runtime_error(cpu_exc) from cpu_exc
         else:
-            raise
+            raise _indic_conformer_runtime_error(exc) from exc
     return _normalize_indic_conformer_output(output)
+
+
+def _run_indic_conformer_model(model: Any, waveform: Any, language: str, decoder: str, torch: Any) -> Any:
+    with torch.inference_mode():
+        return model(waveform, language, decoder)
+
+
+def _indic_conformer_runtime_error(exc: Exception) -> TranscriptionError:
+    message = str(exc)
+    if "TorchScript interpreter" in message or "default_program" in message:
+        return TranscriptionError(
+            "AI4Bharat Indic Conformer failed inside its bundled TorchScript/ONNX runtime. "
+            "Use Sarvam or faster-whisper for this recording, or try pinning the open-source speech stack "
+            "to older compatible torch/transformers versions."
+        )
+    return TranscriptionError(f"Indic Conformer transcription failed: {_short_error(exc)}")
 
 
 def _get_indic_conformer_model(model_name: str, device: str, hf_token: str | None) -> Any:
@@ -638,6 +660,9 @@ def _clean_indic_conformer_text(text: str) -> str:
 
 
 def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
+    if indic_provider_selected():
+        return transcribe_indic_live_preview(audio_path)
+
     model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
@@ -666,6 +691,23 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
         for segment in segments
         if _is_usable_live_segment(segment)
     ]
+
+
+def transcribe_indic_live_preview(audio_path: str) -> List[SpeakerTurn]:
+    client = IndicConformerPyannoteTranscriptionClient(
+        decoder=os.getenv("LIVE_INDIC_CONFORMER_DECODER", "ctc"),
+        language=os.getenv("LIVE_INDIC_CONFORMER_LANGUAGE") or None,
+        device=os.getenv("LIVE_INDIC_CONFORMER_DEVICE") or None,
+    )
+    try:
+        text, duration_ms = client._transcribe_wav_text(audio_path)
+    except TranscriptionError as exc:
+        if "did not return transcript text" in str(exc):
+            return []
+        raise
+    if not text.strip():
+        return []
+    return [SpeakerTurn(speaker="Live", text=text.strip(), start_ms=0, end_ms=duration_ms)]
 
 
 def _is_usable_live_segment(segment: Any) -> bool:

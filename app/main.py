@@ -141,7 +141,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
     await websocket_user(websocket)
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
-    chunk_seconds = int(websocket.query_params.get("chunk_seconds", "1"))
+    chunk_seconds = int(websocket.query_params.get("chunk_seconds", os.getenv("LOCAL_LIVE_CHUNK_SECONDS", "5")))
     if sarvam_provider_selected():
         await _live_transcribe_sarvam(websocket, sample_rate)
         return
@@ -149,39 +149,40 @@ async def live_transcribe(websocket: WebSocket) -> None:
     bytes_per_chunk = sample_rate * 2 * max(1, chunk_seconds)
     pcm_buffer = bytearray()
     sequence = 0
-    # Tracks the last emitted text per speaker so overlapping Whisper chunks
-    # don't repeat words that were already sent to the client.
-    last_text: dict[str, str] = {}
+    received_bytes = 0
+    logger.info("Live captions connected: sample_rate=%s chunk_seconds=%s bytes_per_chunk=%s", sample_rate, chunk_seconds, bytes_per_chunk)
     await websocket.send_json({"type": "state", "message": "Live captions connected"})
 
     async def _flush() -> None:
         nonlocal sequence
         if not pcm_buffer:
             return
-        if not _pcm_has_enough_signal(bytes(pcm_buffer), sample_rate):
+        pcm_bytes = bytes(pcm_buffer)
+        duration_s = len(pcm_bytes) / max(1, sample_rate * 2)
+        if not _pcm_has_enough_signal(pcm_bytes, sample_rate):
             pcm_buffer.clear()
+            rms, peak = _pcm_signal_stats(pcm_bytes)
+            logger.info("Live caption chunk skipped: %.1fs, low signal rms=%.1f peak=%s.", duration_s, rms, peak)
             await websocket.send_json({"type": "state", "message": "Listening for speech"})
             return
         sequence += 1
-        wav_path = _write_pcm_wav(bytes(pcm_buffer), sample_rate, f"live-{sequence}")
+        wav_path = _write_pcm_wav(pcm_bytes, sample_rate, f"live-{sequence}")
         pcm_buffer.clear()
         try:
             await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
+            started = asyncio.get_running_loop().time()
             turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
-            novel_turns = []
-            for turn in (turns or []):
-                suffix = new_suffix(last_text.get(turn.speaker, ""), turn.text)
-                if suffix:
-                    last_text[turn.speaker] = turn.text
-                    novel_turns.append(turn.model_copy(update={"text": suffix}))
-            if novel_turns:
+            elapsed_s = asyncio.get_running_loop().time() - started
+            if turns:
+                logger.info("Live caption chunk emitted: %.1fs audio, %.1fs processing, %s turn(s).", duration_s, elapsed_s, len(turns))
                 await websocket.send_json(
                     {
                         "type": "transcript",
-                        "turns": [turn.model_dump(mode="json") for turn in novel_turns],
+                        "turns": [turn.model_dump(mode="json") for turn in turns],
                     }
                 )
             else:
+                logger.info("Live caption chunk returned no text: %.1fs audio, %.1fs processing.", duration_s, elapsed_s)
                 await websocket.send_json({"type": "state", "message": "Listening for speech"})
         finally:
             delete_temp_file(str(wav_path))
@@ -190,11 +191,15 @@ async def live_transcribe(websocket: WebSocket) -> None:
         while True:
             message = await websocket.receive()
             if message.get("text") == "stop":
+                logger.info("Live captions stop received: buffered_bytes=%s total_received_bytes=%s", len(pcm_buffer), received_bytes)
                 await _flush()
                 break
             chunk = message.get("bytes")
             if not chunk:
                 continue
+            received_bytes += len(chunk)
+            if received_bytes == len(chunk):
+                logger.info("Live captions receiving audio bytes.")
             pcm_buffer.extend(chunk)
             if len(pcm_buffer) >= bytes_per_chunk:
                 await _flush()
@@ -653,14 +658,21 @@ def _pcm_has_enough_signal(pcm_bytes: bytes, sample_rate: int) -> bool:
     min_samples = int(sample_rate * max(0.1, _env_float("LIVE_MIN_AUDIO_SECONDS", 0.35)))
     if sample_count < min_samples:
         return False
+    rms, peak = _pcm_signal_stats(pcm_bytes)
+    return rms >= _env_float("LIVE_PCM_RMS_THRESHOLD", 35.0) and peak >= _env_float("LIVE_PCM_PEAK_THRESHOLD", 120.0)
+
+
+def _pcm_signal_stats(pcm_bytes: bytes) -> tuple[float, int]:
+    sample_count = len(pcm_bytes) // 2
+    if sample_count <= 0:
+        return 0.0, 0
     total = 0
     peak = 0
     for index in range(0, sample_count * 2, 2):
         sample = int.from_bytes(pcm_bytes[index:index + 2], byteorder="little", signed=True)
         total += sample * sample
         peak = max(peak, abs(sample))
-    rms = math.sqrt(total / sample_count)
-    return rms >= _env_float("LIVE_PCM_RMS_THRESHOLD", 120.0) and peak >= _env_float("LIVE_PCM_PEAK_THRESHOLD", 500.0)
+    return math.sqrt(total / sample_count), peak
 
 
 def _env_float(name: str, default: float) -> float:

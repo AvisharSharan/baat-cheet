@@ -125,7 +125,7 @@ async function startLiveTranscription(stream) {
 
 async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=1&token=${encodeURIComponent(authToken)}`);
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=5&token=${encodeURIComponent(authToken)}`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -135,7 +135,10 @@ async function createLiveSocket() {
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = mergeLiveTranscriptTurns(liveTranscript, payload.turns);
       renderTranscript(liveTranscript, {}, { skipSpeakerEditor: true, follow: true, livePreview: true });
-      if (!isFinalizingRecording) setStatus("Recording - live captions");
+      if (!isFinalizingRecording) {
+        const words = liveTranscript.map((turn) => String(turn.text || "")).join(" ").trim().split(/\s+/).filter(Boolean).length;
+        setStatus(words ? `Recording - live captions (${words} words)` : "Recording - live captions received");
+      }
     }
     if (payload.type === "error") setStatus(`Live captions failed: ${payload.message}`);
   };
@@ -205,9 +208,7 @@ function mergeLiveTranscriptTurns(currentTurns, nextTurns) {
     .join(" "));
   if (!nextText) return currentText ? [{ speaker: "", text: currentText }] : [];
   const text = [currentText, nextText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-  const words = text.split(/\s+/).filter(Boolean);
-  const previewText = words.slice(-80).join(" ");
-  return previewText ? [{ speaker: "", text: previewText }] : [];
+  return text ? [{ speaker: "", text }] : [];
 }
 
 function cleanLiveCaptionText(value) {
@@ -215,9 +216,7 @@ function cleanLiveCaptionText(value) {
   if (!text) return "";
   const noisyTokenPattern = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{8}[_-][A-Za-z0-9_-]{8,}|(?=[A-Za-z0-9_-]{20,}\b)(?=.*\d)(?=.*[-_])[A-Za-z0-9_-]+)\b/gi;
   const cleaned = collapseRepeatedLiveWords(text.replace(noisyTokenPattern, "").replace(/\s+/g, " ").trim());
-  if (!cleaned) return "";
-  const symbolCount = (cleaned.match(/[^A-Za-z0-9\s.,?!'"()-]/g) || []).length;
-  return symbolCount / Math.max(cleaned.length, 1) > 0.12 ? "" : cleaned;
+  return cleaned;
 }
 
 function collapseRepeatedLiveWords(value) {
