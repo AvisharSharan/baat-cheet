@@ -24,7 +24,7 @@ from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistory
 from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
-from .services.speaker_id import LiveSpeakerTracker, SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
+from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
 from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_preview
 from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
@@ -159,16 +159,12 @@ async def live_transcribe(websocket: WebSocket) -> None:
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
     chunk_seconds = int(websocket.query_params.get("chunk_seconds", os.getenv("LOCAL_LIVE_CHUNK_SECONDS", "5")))
-    speaker_labels_enabled = websocket.query_params.get("speaker_labels_enabled", "1").strip().lower() not in {"0", "false", "no", "off"}
-    num_speakers = _optional_int(websocket.query_params.get("num_speakers"))
     if sarvam_provider_selected():
         await _live_transcribe_sarvam(websocket, sample_rate)
         return
 
     bytes_per_chunk = sample_rate * 2 * max(1, chunk_seconds)
     pcm_buffer = bytearray()
-    full_pcm_buffer = bytearray()
-    live_speaker_tracker = LiveSpeakerTracker(expected_speakers=num_speakers) if speaker_labels_enabled else None
     sequence = 0
     received_bytes = 0
     logger.info("Live captions connected: sample_rate=%s chunk_seconds=%s bytes_per_chunk=%s", sample_rate, chunk_seconds, bytes_per_chunk)
@@ -188,10 +184,6 @@ async def live_transcribe(websocket: WebSocket) -> None:
             return
         sequence += 1
         wav_path = _write_pcm_wav(pcm_bytes, sample_rate, f"live-{sequence}")
-        full_wav_path = _write_pcm_wav(bytes(full_pcm_buffer), sample_rate, f"live-full-{sequence}")
-        full_duration_ms = int(len(full_pcm_buffer) * 1000 / max(1, sample_rate * 2))
-        chunk_duration_ms = int(len(pcm_bytes) * 1000 / max(1, sample_rate * 2))
-        chunk_start_ms = max(0, full_duration_ms - chunk_duration_ms)
         pcm_buffer.clear()
         try:
             await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
@@ -199,16 +191,9 @@ async def live_transcribe(websocket: WebSocket) -> None:
             turns = await asyncio.to_thread(
                 transcribe_live_preview,
                 str(wav_path),
-                num_speakers,
-                speaker_labels_enabled,
-                str(full_wav_path),
-                chunk_start_ms,
-                full_duration_ms,
             )
             elapsed_s = asyncio.get_running_loop().time() - started
             if turns:
-                if live_speaker_tracker:
-                    turns = await asyncio.to_thread(live_speaker_tracker.relabel_turns, str(wav_path), turns)
                 logger.info("Live caption chunk emitted: %.1fs audio, %.1fs processing, %s turn(s).", duration_s, elapsed_s, len(turns))
                 await websocket.send_json(
                     {
@@ -221,7 +206,6 @@ async def live_transcribe(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "state", "message": "Listening for speech"})
         finally:
             delete_temp_file(str(wav_path))
-            delete_temp_file(str(full_wav_path))
 
     try:
         while True:
@@ -237,7 +221,6 @@ async def live_transcribe(websocket: WebSocket) -> None:
             if received_bytes == len(chunk):
                 logger.info("Live captions receiving audio bytes.")
             pcm_buffer.extend(chunk)
-            full_pcm_buffer.extend(chunk)
             if len(pcm_buffer) >= bytes_per_chunk:
                 await _flush()
     except WebSocketDisconnect:
