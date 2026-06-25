@@ -59,7 +59,7 @@
 }
 
 .turn:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-3);
 }
 
 .turn:last-child { border-bottom: none; }
@@ -183,8 +183,7 @@
   gap: 10px;
   border: 1px solid var(--border-3);
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--bg-3) 70%, transparent);
-  backdrop-filter: var(--glass-blur);
+  background: var(--bg-3);
   box-shadow: var(--shadow-sm);
 }
 

@@ -1,13 +1,13 @@
 /* ═══════════════════════════════════════════════
-   TOKENS (Premium Glassmorphism Vibe)
+   TOKENS
 ═══════════════════════════════════════════════ */
 :root {
   /* Dark theme (Professional Onyx/Obsidian) */
   --bg:        #0a0a0a;
-  --bg-2:      rgba(23, 23, 23, 0.6);
-  --bg-3:      rgba(38, 38, 38, 0.65);
-  --bg-4:      rgba(51, 51, 51, 0.7);
-  --bg-5:      rgba(64, 64, 64, 0.75);
+  --bg-2:      #171717;
+  --bg-3:      #262626;
+  --bg-4:      #333333;
+  --bg-5:      #404040;
   
   --border:    rgba(255, 255, 255, 0.05);
   --border-2:  rgba(255, 255, 255, 0.08);
@@ -47,19 +47,17 @@
   --font-body: 'Outfit', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, monospace;
 
-  --shadow-sm: 0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05);
-  --shadow:    0 12px 32px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
-  
-  --glass-blur: none;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.28);
+  --shadow:    0 8px 24px rgba(0,0,0,0.32);
 }
 
 html[data-theme="light"] {
-  /* Light theme (Crisp glass and airy) */
+  /* Light theme */
   --bg:        #f3f4f6;
-  --bg-2:      rgba(255, 255, 255, 0.6);
-  --bg-3:      rgba(249, 250, 251, 0.65);
-  --bg-4:      rgba(243, 244, 246, 0.7);
-  --bg-5:      rgba(229, 231, 235, 0.75);
+  --bg-2:      #ffffff;
+  --bg-3:      #f9fafb;
+  --bg-4:      #f3f4f6;
+  --bg-5:      #e5e7eb;
   
   --border:    rgba(0, 0, 0, 0.05);
   --border-2:  rgba(0, 0, 0, 0.08);
@@ -85,7 +83,7 @@ html[data-theme="light"] {
   --red-2:     #ef4444;
   --red-dim:   rgba(220, 38, 38, 0.1);
 
-  --shadow-sm: 0 4px 12px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.6);
-  --shadow:    0 12px 32px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.6);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow:    0 8px 24px rgba(0,0,0,0.1);
 }
 
