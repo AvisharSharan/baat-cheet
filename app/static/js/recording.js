@@ -142,7 +142,7 @@ async function createLiveSocket() {
     }
     if (payload.type === "transcript" && payload.turns) {
       liveTranscript = mergeLiveTranscriptTurns(liveTranscript, payload.turns);
-      renderTranscript(liveTranscript, {}, { skipSpeakerEditor: true, follow: true, livePreview: true });
+      renderTranscript(liveTranscript, {}, { skipSpeakerEditor: true, follow: true, livePreview: true, processing: true });
       if (!isFinalizingRecording) {
         const words = liveTranscript.map((turn) => String(turn.text || "")).join(" ").trim().split(/\s+/).filter(Boolean).length;
         setStatus(words ? `Recording - live captions (${words} words)` : "Recording - live captions received");
