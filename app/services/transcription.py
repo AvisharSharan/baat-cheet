@@ -138,6 +138,28 @@ def _preload_faster_whisper_runtime() -> None:
         except Exception as exc:
             logger.warning("Could not preload pyannote diarization: %s", _short_error(exc))
 
+    if os.getenv("MOM_PRELOAD_DUMMY_AUDIO", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+        
+    client = FasterWhisperPyannoteTranscriptionClient()
+    with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+        wav_path = Path(handle.name)
+    try:
+        chunk_seconds = int(os.getenv("LOCAL_LIVE_CHUNK_SECONDS", "5"))
+        _write_silence_wav(wav_path, duration_s=chunk_seconds)
+        try:
+            with _quiet_preload_output():
+                client._transcribe_with_faster_whisper(str(wav_path))
+                if hasattr(client, "_diarize_with_pyannote"):
+                    try:
+                        client._diarize_with_pyannote(str(wav_path), num_speakers=None)
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.info("faster-whisper dummy warmup finished without transcript: %s", _short_error(exc))
+    finally:
+        unlink_with_retry(wav_path)
+
 
 def _preload_indic_conformer_runtime() -> None:
     client = IndicConformerPyannoteTranscriptionClient()
@@ -145,12 +167,22 @@ def _preload_indic_conformer_runtime() -> None:
     logger.info("Preloading Indic Conformer model '%s' on %s.", client.model_name, device)
     with _quiet_preload_output():
         _get_indic_conformer_model(client.model_name, device, client.hf_token)
+        
+    if os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}:
+        try:
+            from pyannote.audio import Pipeline
+            logger.info("Preloading pyannote diarization pipeline.")
+            _get_pyannote_pipeline(Pipeline, client.pyannote_model, client.hf_token)
+        except Exception as exc:
+            logger.warning("Could not preload pyannote diarization: %s", _short_error(exc))
+
     if os.getenv("MOM_PRELOAD_DUMMY_AUDIO", "1").strip().lower() in {"0", "false", "no", "off"}:
         return
     with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         wav_path = Path(handle.name)
     try:
-        _write_silence_wav(wav_path, duration_s=0.6)
+        chunk_seconds = int(os.getenv("LOCAL_LIVE_CHUNK_SECONDS", "5"))
+        _write_silence_wav(wav_path, duration_s=chunk_seconds)
         try:
             with _quiet_preload_output():
                 _transcribe_with_indic_conformer(
@@ -161,6 +193,11 @@ def _preload_indic_conformer_runtime() -> None:
                     device,
                     client.hf_token,
                 )
+                if hasattr(client, "_diarize_with_pyannote"):
+                    try:
+                        client._diarize_with_pyannote(str(wav_path), num_speakers=None)
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.info("Indic Conformer dummy warmup finished without transcript: %s", _short_error(exc))
     finally:

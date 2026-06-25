@@ -38,6 +38,22 @@ def _quiet_runtime_warnings() -> None:
     warnings.filterwarnings("ignore", message=r"(?s).*TensorFloat-32 \(TF32\) has been disabled.*")
     warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*", category=UserWarning)
     warnings.filterwarnings("ignore", message=r"(?s).*detected number of speakers.*outside.*given bounds.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r"(?s).*FRAME_DURATION_MS.*")
+    
+    class PyannoteFilter(logging.Filter):
+        def filter(self, record):
+            if "FRAME_DURATION_MS" in record.getMessage():
+                return False
+            return True
+            
+    logging.getLogger("pyannote.audio.core.io").addFilter(PyannoteFilter())
+    logging.getLogger("pyannote.audio").addFilter(PyannoteFilter())
+    
+    try:
+        import onnxruntime
+        onnxruntime.set_default_logger_severity(3)
+    except Exception:
+        pass
 
 
 load_dotenv()
@@ -142,7 +158,24 @@ async def update_settings(
     _: CurrentUser = Depends(current_user),
 ) -> SettingsResponse:
     updates = request.model_dump(exclude_none=True)
-    return SettingsResponse(**save_settings(updates))
+    
+    speech_keys = {
+        "transcription_provider", "whisper_model", "whisper_device", 
+        "indic_conformer_model", "indic_conformer_language", 
+        "indic_conformer_decoder", "indic_conformer_device", 
+        "diarization_provider"
+    }
+    should_preload = any(k in updates for k in speech_keys)
+
+    result = save_settings(updates)
+
+    if should_preload:
+        global warmup_task
+        if warmup_task and not warmup_task.done():
+            warmup_task.cancel()
+        warmup_task = asyncio.create_task(_preload_runtime_background())
+        
+    return SettingsResponse(**result)
 
 
 @app.get("/api/settings/ollama-models")
@@ -198,7 +231,11 @@ async def live_transcribe(websocket: WebSocket) -> None:
         wav_path = _write_pcm_wav(pcm_bytes, sample_rate, f"live-{sequence}")
         pcm_buffer.clear()
         try:
-            await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
+            global warmup_task
+            if warmup_task and not warmup_task.done():
+                await websocket.send_json({"type": "state", "message": "Loading models (first chunk may be slow)"})
+            else:
+                await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
             started = asyncio.get_running_loop().time()
             turns = await asyncio.to_thread(
                 transcribe_live_preview,
