@@ -11,6 +11,7 @@ class MeetingStatus(str, Enum):
     UPLOADED = "uploaded"
     TRANSCRIBING = "transcribing"
     TRANSCRIBED = "transcribed"
+    TRANSLATING = "translating"
     GENERATING = "generating"
     READY = "ready"
     CANCELED = "canceled"
