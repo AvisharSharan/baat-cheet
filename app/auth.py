@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.utils import env_int
 
 import base64
 import hashlib
@@ -44,7 +45,7 @@ def load_auth_settings() -> LocalAuthSettings:
         username=username,
         password_hash=password_hash or hash_password(raw_password),
         secret=os.getenv("JWT_SECRET", "dev-local-jwt-secret-change-me"),
-        expires_minutes=_env_int("JWT_EXPIRES_MINUTES", 12 * 60),
+        expires_minutes=env_int("JWT_EXPIRES_MINUTES", 12 * 60),
     )
 
 
@@ -164,7 +165,7 @@ def _b64decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(f"{value}{padding}")
 
 
-def _env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
     except ValueError:

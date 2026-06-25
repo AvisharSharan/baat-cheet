@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.utils import env_int, unlink_with_retry
 
 import asyncio
 import base64
@@ -16,7 +17,7 @@ import wave
 from pathlib import Path
 from threading import RLock
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Any, Dict, Iterable, List, Protocol
+from typing import Any, Iterable, Protocol
 
 from app.models import SpeakerTurn
 
@@ -37,13 +38,13 @@ class TranscriptionClient(Protocol):
         audio_path: str,
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         ...
 
 
-_PYANNOTE_PIPELINE_CACHE: Dict[str, Any] = {}
-_WHISPER_MODEL_CACHE: Dict[str, Any] = {}
-_INDIC_CONFORMER_MODEL_CACHE: Dict[str, Any] = {}
+_PYANNOTE_PIPELINE_CACHE: dict[str, Any] = {}
+_WHISPER_MODEL_CACHE: dict[str, Any] = {}
+_INDIC_CONFORMER_MODEL_CACHE: dict[str, Any] = {}
 _WHISPER_MODEL_LOCK = RLock()
 _INDIC_CONFORMER_MODEL_LOCK = RLock()
 _INDIC_CONFORMER_LANGUAGES = {
@@ -163,7 +164,7 @@ def _preload_indic_conformer_runtime() -> None:
         except Exception as exc:
             logger.info("Indic Conformer dummy warmup finished without transcript: %s", _short_error(exc))
     finally:
-        _unlink_with_retry(wav_path)
+        unlink_with_retry(wav_path)
 
 
 class FasterWhisperPyannoteTranscriptionClient:
@@ -187,7 +188,7 @@ class FasterWhisperPyannoteTranscriptionClient:
         audio_path: str,
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         if not self._should_predecode_for_diarization(num_speakers, speaker_labels_enabled):
             return await self._transcribe_internal(audio_path, num_speakers, speaker_labels_enabled)
 
@@ -205,7 +206,7 @@ class FasterWhisperPyannoteTranscriptionClient:
             await asyncio.to_thread(_decode_audio_for_local_processing, audio_path, str(wav_path))
             return await self._transcribe_internal(str(wav_path), num_speakers, speaker_labels_enabled)
         finally:
-            _unlink_with_retry(wav_path)
+            unlink_with_retry(wav_path)
 
     def _should_predecode_for_diarization(self, num_speakers: int | None, speaker_labels_enabled: bool) -> bool:
         diarization_enabled = os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}
@@ -224,7 +225,7 @@ class FasterWhisperPyannoteTranscriptionClient:
         audio_path: str,
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         whisper_task = asyncio.to_thread(self._transcribe_with_faster_whisper, audio_path)
 
         if not speaker_labels_enabled:
@@ -248,9 +249,9 @@ class FasterWhisperPyannoteTranscriptionClient:
         segments, diarization = await asyncio.gather(whisper_task, diarization_task)
         return _assign_speakers_to_segments(segments, diarization)
 
-    def _transcribe_with_faster_whisper(self, audio_path: str) -> List[Dict[str, Any]]:
+    def _transcribe_with_faster_whisper(self, audio_path: str) -> list[dict[str, Any]]:
         transcribe_options = {
-            "beam_size": _env_int("FASTER_WHISPER_BEAM_SIZE", 1),
+            "beam_size": env_int("FASTER_WHISPER_BEAM_SIZE", 1),
             "vad_filter": _env_bool("FASTER_WHISPER_VAD_FILTER", True),
             "word_timestamps": _env_bool("FASTER_WHISPER_WORD_TIMESTAMPS", False),
         }
@@ -275,7 +276,7 @@ class FasterWhisperPyannoteTranscriptionClient:
             raise TranscriptionError("faster-whisper did not return any transcript segments.")
         return records
 
-    def _diarize_with_pyannote(self, audio_path: str, num_speakers: int | None = None) -> List[Dict[str, Any]]:
+    def _diarize_with_pyannote(self, audio_path: str, num_speakers: int | None = None) -> list[dict[str, Any]]:
         try:
             from pyannote.audio import Pipeline
         except ImportError as exc:
@@ -284,7 +285,7 @@ class FasterWhisperPyannoteTranscriptionClient:
             ) from exc
 
         pipeline = _get_pyannote_pipeline(Pipeline, self.pyannote_model, self.hf_token)
-        kwargs: Dict[str, Any] = {}
+        kwargs: dict[str, Any] = {}
         if num_speakers is not None:
             kwargs["num_speakers"] = num_speakers
         audio_input = _pyannote_audio_input(audio_path)
@@ -330,7 +331,7 @@ class IndicConformerPyannoteTranscriptionClient(FasterWhisperPyannoteTranscripti
         audio_path: str,
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         try:
             with NamedTemporaryFile(suffix=".wav", delete=False) as handle:
                 wav_path = Path(handle.name)
@@ -357,7 +358,7 @@ class IndicConformerPyannoteTranscriptionClient(FasterWhisperPyannoteTranscripti
             return _assign_text_to_diarization(text, diarization, duration_ms, expected_speakers=num_speakers)
         finally:
             if "wav_path" in locals():
-                _unlink_with_retry(wav_path)
+                unlink_with_retry(wav_path)
 
     def _transcribe_wav_text(self, wav_path: str) -> tuple[str, int | None]:
         duration_ms = _wav_duration_ms(wav_path)
@@ -394,7 +395,7 @@ class SarvamSaarasTranscriptionClient:
         audio_path: str,
         num_speakers: int | None = None,
         speaker_labels_enabled: bool = True,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         return await asyncio.to_thread(self._transcribe_sync, audio_path, num_speakers, speaker_labels_enabled)
 
     def _transcribe_sync(
@@ -402,7 +403,7 @@ class SarvamSaarasTranscriptionClient:
         audio_path: str,
         num_speakers: int | None,
         speaker_labels_enabled: bool,
-    ) -> List[SpeakerTurn]:
+    ) -> list[SpeakerTurn]:
         if not self.api_key:
             raise TranscriptionError("Set SARVAM_API_KEY to use TRANSCRIPTION_PROVIDER=sarvam.")
         if self.mode not in {"transcribe", "translate", "verbatim", "translit", "codemix"}:
@@ -415,7 +416,7 @@ class SarvamSaarasTranscriptionClient:
 
         with TemporaryDirectory(prefix="sarvam-stt-") as output_dir:
             client = SarvamAI(api_subscription_key=self.api_key)
-            job_kwargs: Dict[str, Any] = {
+            job_kwargs: dict[str, Any] = {
                 "model": self.model,
                 "mode": self.mode,
                 "language_code": self.language_code,
@@ -474,7 +475,7 @@ class SarvamLiveCaptionSession:
             raise TranscriptionError("sarvamai is not installed. Run: python -m pip install -r requirements.txt") from exc
 
         self._client = AsyncSarvamAI(api_subscription_key=self.api_key)
-        connect_kwargs: Dict[str, Any] = {
+        connect_kwargs: dict[str, Any] = {
             "model": self.model,
             "mode": self.mode,
             "sample_rate": self.sample_rate,
@@ -507,7 +508,7 @@ class SarvamLiveCaptionSession:
         if self._ws and hasattr(self._ws, "flush"):
             await self._ws.flush()
 
-    async def receive_turns(self) -> List[SpeakerTurn]:
+    async def receive_turns(self) -> list[SpeakerTurn]:
         if not self._ws:
             return []
         message = await self._ws.recv()
@@ -596,7 +597,7 @@ def _get_indic_conformer_model(model_name: str, device: str, hf_token: str | Non
                 "Indic Conformer requires transformers, torch, and torchaudio. Install the open-source speech requirements."
             ) from exc
 
-        kwargs: Dict[str, Any] = {"trust_remote_code": True}
+        kwargs: dict[str, Any] = {"trust_remote_code": True}
         if hf_token:
             kwargs["token"] = hf_token
 
@@ -665,7 +666,7 @@ def _clean_indic_conformer_text(text: str) -> str:
 
 def transcribe_live_preview(
     audio_path: str,
-) -> List[SpeakerTurn]:
+) -> list[SpeakerTurn]:
     if _live_preview_uses_indic():
         return transcribe_indic_live_preview(audio_path)
 
@@ -673,8 +674,8 @@ def transcribe_live_preview(
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
     language = (os.getenv("LIVE_WHISPER_LANGUAGE") or os.getenv("INDIC_CONFORMER_LANGUAGE") or "").strip().lower()
-    transcribe_options: Dict[str, Any] = {
-        "beam_size": _env_int("LIVE_WHISPER_BEAM_SIZE", 1),
+    transcribe_options: dict[str, Any] = {
+        "beam_size": env_int("LIVE_WHISPER_BEAM_SIZE", 1),
         "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", True),
         "no_speech_threshold": _env_float("LIVE_WHISPER_NO_SPEECH_THRESHOLD", 0.65),
         "log_prob_threshold": _env_float("LIVE_WHISPER_LOG_PROB_THRESHOLD", -1.0),
@@ -703,7 +704,7 @@ def transcribe_live_preview(
     ]
 
 
-def transcribe_indic_live_preview(audio_path: str) -> List[SpeakerTurn]:
+def transcribe_indic_live_preview(audio_path: str) -> list[SpeakerTurn]:
     client = IndicConformerPyannoteTranscriptionClient(
         decoder=os.getenv("LIVE_INDIC_CONFORMER_DECODER", "ctc"),
         language=os.getenv("LIVE_INDIC_CONFORMER_LANGUAGE") or None,
@@ -754,10 +755,10 @@ def _transcribe_with_device_fallback(
     model_name: str,
     device: str,
     compute_type: str,
-    transcribe_options: Dict[str, Any],
+    transcribe_options: dict[str, Any],
     *,
     allow_cpu_fallback: bool,
-) -> List[Any]:
+) -> list[Any]:
     try:
         model = _get_faster_whisper_model(model_name, device, compute_type)
         segments, _ = model.transcribe(audio_path, **transcribe_options)
@@ -775,6 +776,8 @@ def _get_faster_whisper_model(model_name: str, device: str, compute_type: str) -
     with _WHISPER_MODEL_LOCK:
         if cache_key in _WHISPER_MODEL_CACHE:
             return _WHISPER_MODEL_CACHE[cache_key]
+        
+        _WHISPER_MODEL_CACHE.clear()
 
         try:
             from faster_whisper import WhisperModel
@@ -858,6 +861,8 @@ def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | No
     cache_key = f"{requested_checkpoint}|{token or ''}|{requested_device}|{id(pipeline_class)}"
     if cache_key in _PYANNOTE_PIPELINE_CACHE:
         return _PYANNOTE_PIPELINE_CACHE[cache_key]
+        
+    _PYANNOTE_PIPELINE_CACHE.clear()
 
     try:
         pipeline = _load_pyannote_pipeline(pipeline_class, requested_checkpoint, token)
@@ -888,8 +893,6 @@ def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | No
 
 
 def _load_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
-    _patch_hf_hub_download_auth_kwarg()
-    _patch_pyannote_speaker_diarization_config()
     if not token:
         return pipeline_class.from_pretrained(checkpoint)
 
@@ -912,52 +915,6 @@ def _load_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | N
         raise last_error
     return pipeline_class.from_pretrained(checkpoint)
 
-
-def _patch_pyannote_speaker_diarization_config() -> None:
-    try:
-        from pyannote.audio.pipelines import SpeakerDiarization
-    except Exception:
-        return
-
-    original = getattr(SpeakerDiarization, "__init__", None)
-    if not original or getattr(original, "_mom_plda_compat", False):
-        return
-
-    def init_compat(self: Any, *args: Any, **kwargs: Any) -> None:
-        kwargs.pop("plda", None)
-        original(self, *args, **kwargs)
-
-    init_compat._mom_plda_compat = True  # type: ignore[attr-defined]
-    SpeakerDiarization.__init__ = init_compat
-
-
-def _patch_hf_hub_download_auth_kwarg() -> None:
-    try:
-        import huggingface_hub
-        import huggingface_hub.file_download as file_download
-    except Exception:
-        return
-
-    original = getattr(huggingface_hub, "hf_hub_download", None)
-    if not original or getattr(original, "_mom_auth_compat", False):
-        return
-
-    def hf_hub_download_compat(*args: Any, **kwargs: Any) -> Any:
-        if "use_auth_token" in kwargs and "token" not in kwargs:
-            kwargs["token"] = kwargs.pop("use_auth_token")
-        else:
-            kwargs.pop("use_auth_token", None)
-        return original(*args, **kwargs)
-
-    hf_hub_download_compat._mom_auth_compat = True  # type: ignore[attr-defined]
-    huggingface_hub.hf_hub_download = hf_hub_download_compat
-    file_download.hf_hub_download = hf_hub_download_compat
-    for module in list(sys.modules.values()):
-        if module and getattr(module, "hf_hub_download", None) is original:
-            try:
-                setattr(module, "hf_hub_download", hf_hub_download_compat)
-            except Exception:
-                pass
 
 
 def _decode_audio_for_local_processing(input_path: str, output_path: str, sample_rate: int = 16000) -> None:
@@ -1015,7 +972,7 @@ def _pcm_to_wav_base64(pcm_bytes: bytes, sample_rate: int) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
+def unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
     for attempt in range(attempts):
         try:
             path.unlink(missing_ok=True)
@@ -1030,7 +987,7 @@ def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> 
             return
 
 
-def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> Dict[str, Any]:
+def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> dict[str, Any]:
     try:
         import torchaudio
     except ImportError as exc:
@@ -1045,11 +1002,11 @@ def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> Dict[str
 
 
 def _assign_speakers_to_segments(
-    segments: List[Dict[str, Any]],
-    diarization: List[Dict[str, Any]],
-) -> List[SpeakerTurn]:
-    speaker_aliases: Dict[str, str] = {}
-    turns: List[SpeakerTurn] = []
+    segments: list[dict[str, Any]],
+    diarization: list[dict[str, Any]],
+) -> list[SpeakerTurn]:
+    speaker_aliases: dict[str, str] = {}
+    turns: list[SpeakerTurn] = []
     for segment in segments:
         text = str(segment.get("text", "")).strip()
         if not text:
@@ -1067,17 +1024,17 @@ def _assign_speakers_to_segments(
 
 def _assign_text_to_diarization(
     text: str,
-    diarization: List[Dict[str, Any]],
+    diarization: list[dict[str, Any]],
     duration_ms: int | None = None,
     expected_speakers: int | None = None,
-) -> List[SpeakerTurn]:
+) -> list[SpeakerTurn]:
     words = text.split()
     if not words:
         raise TranscriptionError("No transcript text was produced from Indic Conformer.")
     if not diarization:
         return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
 
-    speaker_aliases: Dict[str, str] = {}
+    speaker_aliases: dict[str, str] = {}
     normalized = _merge_adjacent_diarization_turns(diarization)
     unique_speakers = {str(turn.get("speaker") or "Speaker 1") for turn in normalized}
     logger.info(
@@ -1103,7 +1060,7 @@ def _assign_text_to_diarization(
     if total_span <= 0:
         return [SpeakerTurn(speaker="Speaker 1", text=text, start_ms=0, end_ms=duration_ms)]
 
-    turns: List[SpeakerTurn] = []
+    turns: list[SpeakerTurn] = []
     word_index = 0
     for index, turn in enumerate(normalized):
         remaining_words = len(words) - word_index
@@ -1142,12 +1099,12 @@ def _split_text_by_expected_speakers(
     text: str,
     expected_speakers: int,
     duration_ms: int | None = None,
-) -> List[SpeakerTurn]:
+) -> list[SpeakerTurn]:
     words = text.split()
     if not words:
         raise TranscriptionError("No transcript text was produced from Indic Conformer.")
     speaker_count = max(1, min(expected_speakers, len(words)))
-    turns: List[SpeakerTurn] = []
+    turns: list[SpeakerTurn] = []
     word_index = 0
     for index in range(speaker_count):
         remaining_words = len(words) - word_index
@@ -1163,8 +1120,8 @@ def _split_text_by_expected_speakers(
     return turns
 
 
-def _merge_adjacent_diarization_turns(diarization: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    merged: List[Dict[str, Any]] = []
+def _merge_adjacent_diarization_turns(diarization: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
     for turn in sorted(diarization, key=lambda item: _first_int(item, ("start_ms", "start")) or 0):
         speaker = str(turn.get("speaker") or "Speaker 1")
         start_ms = _first_int(turn, ("start_ms", "start"))
@@ -1176,7 +1133,7 @@ def _merge_adjacent_diarization_turns(diarization: List[Dict[str, Any]]) -> List
     return merged
 
 
-def _segments_to_plain_transcript(segments: List[Dict[str, Any]]) -> List[SpeakerTurn]:
+def _segments_to_plain_transcript(segments: list[dict[str, Any]]) -> list[SpeakerTurn]:
     text = " ".join(str(segment.get("text", "")).strip() for segment in segments).strip()
     if not text:
         raise TranscriptionError("No transcript text was produced from local transcription.")
@@ -1192,7 +1149,7 @@ def _segments_to_plain_transcript(segments: List[Dict[str, Any]]) -> List[Speake
     ]
 
 
-def _sarvam_file_results(job: Any) -> Dict[str, Any]:
+def _sarvam_file_results(job: Any) -> dict[str, Any]:
     try:
         results = job.get_file_results()
     except Exception as exc:
@@ -1202,7 +1159,7 @@ def _sarvam_file_results(job: Any) -> Dict[str, Any]:
     return results
 
 
-def _load_first_sarvam_output(output_dir: Path) -> Dict[str, Any]:
+def _load_first_sarvam_output(output_dir: Path) -> dict[str, Any]:
     json_files = sorted(output_dir.rglob("*.json"))
     if not json_files:
         raise TranscriptionError("Sarvam did not download any transcript JSON outputs.")
@@ -1215,7 +1172,7 @@ def _load_first_sarvam_output(output_dir: Path) -> Dict[str, Any]:
     return payload
 
 
-def _sarvam_payload_to_turns(payload: Dict[str, Any], *, speaker_labels_enabled: bool) -> List[SpeakerTurn]:
+def _sarvam_payload_to_turns(payload: dict[str, Any], *, speaker_labels_enabled: bool) -> list[SpeakerTurn]:
     if speaker_labels_enabled:
         entries = ((payload.get("diarized_transcript") or {}).get("entries") or [])
         if entries:
@@ -1237,7 +1194,7 @@ def _sarvam_payload_to_turns(payload: Dict[str, Any], *, speaker_labels_enabled:
     return [SpeakerTurn(speaker=speaker, text=text)]
 
 
-def _sarvam_stream_message_to_turns(message: Any) -> List[SpeakerTurn]:
+def _sarvam_stream_message_to_turns(message: Any) -> list[SpeakerTurn]:
     payload = _message_to_plain_data(message)
     if not payload:
         return []
@@ -1312,7 +1269,7 @@ def _first_text_value(payload: Any, keys: Iterable[str]) -> str:
     return ""
 
 
-def _sarvam_entry_to_turn(entry: Dict[str, Any]) -> SpeakerTurn:
+def _sarvam_entry_to_turn(entry: dict[str, Any]) -> SpeakerTurn:
     speaker_id = str(entry.get("speaker_id") or "0")
     speaker = _sarvam_speaker_label(speaker_id)
     return SpeakerTurn(
@@ -1323,12 +1280,12 @@ def _sarvam_entry_to_turn(entry: Dict[str, Any]) -> SpeakerTurn:
     )
 
 
-def _sarvam_timestamp_turns(payload: Dict[str, Any]) -> List[SpeakerTurn]:
+def _sarvam_timestamp_turns(payload: dict[str, Any]) -> list[SpeakerTurn]:
     timestamps = payload.get("timestamps") or {}
     chunks = timestamps.get("chunks") or []
     starts = timestamps.get("start_time_seconds") or []
     ends = timestamps.get("end_time_seconds") or []
-    turns: List[SpeakerTurn] = []
+    turns: list[SpeakerTurn] = []
     for index, chunk in enumerate(chunks):
         text = str(chunk or "").strip()
         if not text:
@@ -1360,7 +1317,7 @@ def _seconds_to_ms(value: Any) -> int | None:
         return None
 
 
-def _best_overlap_speaker(start_ms: int | None, end_ms: int | None, diarization: List[Dict[str, Any]]) -> str | None:
+def _best_overlap_speaker(start_ms: int | None, end_ms: int | None, diarization: list[dict[str, Any]]) -> str | None:
     if start_ms is None or end_ms is None or end_ms <= start_ms:
         return str(diarization[0]["speaker"]) if diarization else None
 
@@ -1376,7 +1333,7 @@ def _best_overlap_speaker(start_ms: int | None, end_ms: int | None, diarization:
     return best_speaker or None
 
 
-def _canonical_speaker_label(raw_speaker: str, speaker_aliases: Dict[str, str]) -> str:
+def _canonical_speaker_label(raw_speaker: str, speaker_aliases: dict[str, str]) -> str:
     if raw_speaker.lower().startswith("speaker "):
         return raw_speaker
     if raw_speaker not in speaker_aliases:
@@ -1384,7 +1341,7 @@ def _canonical_speaker_label(raw_speaker: str, speaker_aliases: Dict[str, str]) 
     return speaker_aliases[raw_speaker]
 
 
-def _first_int(record: Dict[str, Any], keys: Iterable[str]) -> int | None:
+def _first_int(record: dict[str, Any], keys: Iterable[str]) -> int | None:
     for key in keys:
         value = record.get(key)
         if isinstance(value, bool) or value is None:
@@ -1406,7 +1363,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None:
         return default
@@ -1426,8 +1383,8 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _merge_adjacent_turns(turns: List[SpeakerTurn]) -> List[SpeakerTurn]:
-    merged: List[SpeakerTurn] = []
+def _merge_adjacent_turns(turns: list[SpeakerTurn]) -> list[SpeakerTurn]:
+    merged: list[SpeakerTurn] = []
     for turn in turns:
         if merged and merged[-1].speaker == turn.speaker:
             previous = merged[-1]

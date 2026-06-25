@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import warnings
 import wave
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Coroutine
@@ -43,8 +44,19 @@ load_dotenv()
 load_settings()
 _quiet_runtime_warnings()
 
-app = FastAPI(title="Minutes-of-Meeting Tool")
 store = MeetingStore()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    for meeting in store.list():
+        if meeting.status in {MeetingStatus.TRANSCRIBING, MeetingStatus.GENERATING}:
+            meeting.status = MeetingStatus.FAILED
+            meeting.error = "Server restarted before task could complete."
+            meeting.completed_at = datetime.now(timezone.utc)
+            store.update(meeting)
+    yield
+
+app = FastAPI(title="Minutes-of-Meeting Tool", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 running_tasks: dict[str, asyncio.Task[None]] = {}
 warmup_task: asyncio.Task[None] | None = None
