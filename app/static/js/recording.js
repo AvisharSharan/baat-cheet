@@ -125,7 +125,15 @@ async function startLiveTranscription(stream) {
 
 async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?sample_rate=${liveSampleRate}&chunk_seconds=5&token=${encodeURIComponent(authToken)}`);
+  const params = new URLSearchParams({
+    sample_rate: String(liveSampleRate),
+    chunk_seconds: "5",
+    speaker_labels_enabled: speakerLabelsToggle.checked ? "1" : "0",
+    token: authToken,
+  });
+  const expectedSpeakers = inferredSpeakerCount();
+  if (Number.isInteger(expectedSpeakers)) params.set("num_speakers", String(expectedSpeakers));
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live/transcribe?${params.toString()}`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -198,17 +206,26 @@ async function uploadRecordedFile() {
 }
 
 function mergeLiveTranscriptTurns(currentTurns, nextTurns) {
-  const currentText = cleanLiveCaptionText((currentTurns || [])
-    .map((turn) => String(turn.text || "").trim())
-    .filter(Boolean)
-    .join(" "));
-  const nextText = cleanLiveCaptionText((nextTurns || [])
-    .map((turn) => String(turn.text || "").trim())
-    .filter(Boolean)
-    .join(" "));
-  if (!nextText) return currentText ? [{ speaker: "", text: currentText }] : [];
-  const text = [currentText, nextText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-  return text ? [{ speaker: "", text }] : [];
+  const merged = (currentTurns || []).map((turn) => ({
+    ...turn,
+    speaker: String(turn.speaker || ""),
+    text: cleanLiveCaptionText(turn.text),
+  })).filter((turn) => turn.text);
+
+  (nextTurns || []).forEach((turn) => {
+    const text = cleanLiveCaptionText(turn.text);
+    if (!text) return;
+    const speaker = String(turn.speaker || "");
+    const previous = merged[merged.length - 1];
+    if (previous && previous.speaker === speaker) {
+      previous.text = `${previous.text} ${text}`.replace(/\s+/g, " ").trim();
+      previous.end_ms = turn.end_ms || previous.end_ms;
+    } else {
+      merged.push({ ...turn, speaker, text });
+    }
+  });
+
+  return merged;
 }
 
 function cleanLiveCaptionText(value) {
@@ -502,9 +519,10 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   // Key changes only when new turns arrive or the last turn's text updates
   const speakerNameKey = JSON.stringify(speakerNames || {});
   const contentMode = options.livePreview ? "live" : (options.noSpeakerLabels ? "plain" : "labels");
-  const contentKey = `${contentMode}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.text ?? ""}`;
+  const contentKey = `${contentMode}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.speaker ?? ""}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
+  const hasLiveSpeakers = options.livePreview && transcript.some((turn) => turn.speaker && turn.speaker !== "Live");
   updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels, livePreview: options.livePreview });
 
   speakerEditor.innerHTML = options.skipSpeakerEditor ? "" : speakers.map((speaker) => {
@@ -524,10 +542,14 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   _lastTranscriptKey = contentKey;
 
   const shouldFollowTranscript = options.follow || isTranscriptNearBottom();
-  transcriptEl.className = (options.noSpeakerLabels || options.livePreview) ? "transcript transcript-plain" : "transcript";
+  transcriptEl.className = (options.noSpeakerLabels || (options.livePreview && !hasLiveSpeakers)) ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn, index) => {
-    if (options.noSpeakerLabels || options.livePreview) {
+    if (options.noSpeakerLabels) {
       return renderTurnHtml(turn, index, "", options);
+    }
+    if (options.livePreview) {
+      const label = hasLiveSpeakers ? (speakerNames[turn.speaker] || turn.speaker) : "";
+      return renderTurnHtml(turn, index, label, options);
     }
     const label = speakerNames[turn.speaker] || turn.speaker;
     return renderTurnHtml(turn, index, label, options);

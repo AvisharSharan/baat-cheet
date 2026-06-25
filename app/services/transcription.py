@@ -97,6 +97,15 @@ def indic_provider_selected(provider: str | None = None) -> bool:
     return selected in _INDIC_PROVIDER_ALIASES
 
 
+def _live_preview_uses_indic() -> bool:
+    live_provider = (os.getenv("LIVE_TRANSCRIPTION_PROVIDER") or os.getenv("LIVE_CAPTION_PROVIDER") or "").strip().lower()
+    if live_provider in _LOCAL_PROVIDER_ALIASES:
+        return False
+    if live_provider in _INDIC_PROVIDER_ALIASES:
+        return True
+    return indic_provider_selected()
+
+
 def preload_transcription_runtime() -> None:
     """Load and lightly warm the active local speech stack.
 
@@ -659,29 +668,40 @@ def _clean_indic_conformer_text(text: str) -> str:
     return " ".join(text.replace("\u2581", " ").replace("\u00e2\u20ac\u2018", " ").split())
 
 
-def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
-    if indic_provider_selected():
+def transcribe_live_preview(
+    audio_path: str,
+    num_speakers: int | None = None,
+    speaker_labels_enabled: bool = True,
+    diarization_audio_path: str | None = None,
+    diarization_start_ms: int | None = None,
+    diarization_end_ms: int | None = None,
+) -> List[SpeakerTurn]:
+    if _live_preview_uses_indic():
         return transcribe_indic_live_preview(audio_path)
 
     model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
+    language = (os.getenv("LIVE_WHISPER_LANGUAGE") or os.getenv("INDIC_CONFORMER_LANGUAGE") or "").strip().lower()
+    transcribe_options: Dict[str, Any] = {
+        "beam_size": _env_int("LIVE_WHISPER_BEAM_SIZE", 1),
+        "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", True),
+        "no_speech_threshold": _env_float("LIVE_WHISPER_NO_SPEECH_THRESHOLD", 0.65),
+        "log_prob_threshold": _env_float("LIVE_WHISPER_LOG_PROB_THRESHOLD", -1.0),
+        "compression_ratio_threshold": _env_float("LIVE_WHISPER_COMPRESSION_RATIO_THRESHOLD", 2.4),
+        "condition_on_previous_text": False,
+    }
+    if language:
+        transcribe_options["language"] = language
     segments = _transcribe_with_device_fallback(
         audio_path,
         model_name,
         device,
         compute_type,
-        {
-            "beam_size": _env_int("LIVE_WHISPER_BEAM_SIZE", 1),
-            "vad_filter": _env_bool("LIVE_WHISPER_VAD_FILTER", True),
-            "no_speech_threshold": _env_float("LIVE_WHISPER_NO_SPEECH_THRESHOLD", 0.65),
-            "log_prob_threshold": _env_float("LIVE_WHISPER_LOG_PROB_THRESHOLD", -1.0),
-            "compression_ratio_threshold": _env_float("LIVE_WHISPER_COMPRESSION_RATIO_THRESHOLD", 2.4),
-            "condition_on_previous_text": False,
-        },
+        transcribe_options,
         allow_cpu_fallback=True,
     )
-    return [
+    turns = [
         SpeakerTurn(
             speaker="Live",
             text=segment.text.strip(),
@@ -691,6 +711,77 @@ def transcribe_live_preview(audio_path: str) -> List[SpeakerTurn]:
         for segment in segments
         if _is_usable_live_segment(segment)
     ]
+    if not turns or not _faster_whisper_live_diarization_enabled(num_speakers, speaker_labels_enabled):
+        return turns
+    try:
+        diarization = FasterWhisperPyannoteTranscriptionClient()._diarize_with_pyannote(diarization_audio_path or audio_path, num_speakers)
+        diarization = _live_chunk_diarization(diarization, diarization_start_ms, diarization_end_ms)
+        if not diarization:
+            return turns
+        records = [turn.model_dump() for turn in turns]
+        return _assign_speakers_to_segments(records, diarization)
+    except Exception as exc:
+        logger.info("Faster-whisper live diarization failed; using plain live captions: %s", _short_error(exc))
+        return turns
+
+
+def _faster_whisper_live_diarization_enabled(num_speakers: int | None, speaker_labels_enabled: bool) -> bool:
+    return (
+        speaker_labels_enabled
+        and num_speakers != 1
+        and os.getenv("LIVE_DIARIZATION_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+        and os.getenv("DIARIZATION_PROVIDER", "pyannote").strip().lower() not in {"none", "off", "0", "false"}
+    )
+
+
+def _live_chunk_diarization(
+    diarization: List[Dict[str, Any]],
+    start_ms: int | None,
+    end_ms: int | None,
+) -> List[Dict[str, Any]]:
+    if start_ms is None or end_ms is None or end_ms <= start_ms:
+        return _stable_live_speaker_labels(diarization)
+    context_ms = max(0, end_ms)
+    min_context_ms = int(_env_float("LIVE_DIARIZATION_MIN_CONTEXT_SECONDS", 15.0) * 1000)
+    if context_ms < min_context_ms:
+        return []
+    delay_ms = int(_env_float("LIVE_DIARIZATION_DELAY_SECONDS", 1.2) * 1000)
+    stable_end_ms = max(start_ms, end_ms - max(0, delay_ms))
+    clipped: List[Dict[str, Any]] = []
+    for turn in diarization:
+        turn_start = _first_int(turn, ("start_ms", "start")) or 0
+        turn_end = _first_int(turn, ("end_ms", "end")) or turn_start
+        overlap_start = max(turn_start, start_ms)
+        overlap_end = min(turn_end, stable_end_ms)
+        if overlap_end <= overlap_start:
+            continue
+        clipped.append(
+            {
+                "speaker": _stable_live_speaker_label(str(turn.get("speaker") or "Speaker 1")),
+                "start_ms": overlap_start - start_ms,
+                "end_ms": overlap_end - start_ms,
+            }
+        )
+    return clipped
+
+
+def _stable_live_speaker_labels(diarization: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            **turn,
+            "speaker": _stable_live_speaker_label(str(turn.get("speaker") or "Speaker 1")),
+        }
+        for turn in diarization
+    ]
+
+
+def _stable_live_speaker_label(raw_speaker: str) -> str:
+    if raw_speaker.lower().startswith("speaker "):
+        return raw_speaker
+    match = re.search(r"(\d+)$", raw_speaker)
+    if match:
+        return f"Speaker {int(match.group(1)) + 1}"
+    return raw_speaker
 
 
 def transcribe_indic_live_preview(audio_path: str) -> List[SpeakerTurn]:
@@ -800,6 +891,12 @@ def _quiet_speech_runtime_warnings() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     warnings.filterwarnings("ignore", message=r".*Specified provider 'CUDAExecutionProvider'.*", category=UserWarning)
     warnings.filterwarnings("ignore", message=r".*torchaudio\.load_with_torchcodec.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r"(?s).*torchcodec is not installed correctly.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r".*Torchaudio's I/O functions now support per-call backend dispatch.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r".*torchaudio\._backend\.list_audio_backends has been deprecated.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r"(?s).*TensorFloat-32 \(TF32\) has been disabled.*")
+    warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=r"(?s).*detected number of speakers.*outside.*given bounds.*", category=UserWarning)
 
 
 def _effective_indic_conformer_device(device: str) -> str:

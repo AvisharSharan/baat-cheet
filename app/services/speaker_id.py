@@ -223,6 +223,76 @@ class SpeakerIdentifier:
         self.profile_store.upsert_many(labeled_embeddings)
 
 
+class LiveSpeakerTracker:
+    def __init__(
+        self,
+        profile_store: VoiceProfileStore | None = None,
+        *,
+        profile_threshold: float | None = None,
+        cluster_threshold: float | None = None,
+        min_segment_ms: int | None = None,
+        expected_speakers: int | None = None,
+    ) -> None:
+        self.profile_store = profile_store or VoiceProfileStore()
+        self.profile_threshold = profile_threshold if profile_threshold is not None else _env_float("LIVE_VOICE_PROFILE_THRESHOLD", 0.68)
+        self.cluster_threshold = cluster_threshold if cluster_threshold is not None else _env_float("LIVE_VOICE_CLUSTER_THRESHOLD", 0.62)
+        self.expected_split_threshold = _env_float("LIVE_VOICE_EXPECTED_SPLIT_THRESHOLD", 0.72)
+        self.min_segment_ms = min_segment_ms if min_segment_ms is not None else _env_int("LIVE_VOICE_MIN_SEGMENT_MS", 700)
+        self.expected_speakers = expected_speakers if expected_speakers and expected_speakers > 1 else None
+        self._profiles: Dict[str, List[float]] | None = None
+        self._clusters: Dict[str, List[float]] = {}
+        self._next_cluster = 1
+
+    def relabel_turns(self, audio_path: str, turns: List[SpeakerTurn]) -> List[SpeakerTurn]:
+        if not voiceprinting_enabled() or not turns:
+            return turns
+        try:
+            embeddings = self._extract_embeddings(audio_path, turns)
+        except Exception:
+            return turns
+        if not embeddings:
+            return turns
+        labels = {speaker: self._label_embedding(embedding) for speaker, embedding in embeddings.items()}
+        return [
+            turn.model_copy(update={"speaker": labels.get(turn.speaker, turn.speaker)})
+            for turn in turns
+        ]
+
+    def _extract_embeddings(self, audio_path: str, turns: List[SpeakerTurn]) -> Dict[str, List[float]]:
+        turns_by_speaker = _group_usable_turns(turns, self.min_segment_ms)
+        if not turns_by_speaker:
+            return {}
+        backend = _EmbeddingBackend.load()
+        waveform, sample_rate = backend.load_audio(audio_path)
+        embeddings: Dict[str, List[float]] = {}
+        for speaker, speaker_turns in turns_by_speaker.items():
+            segment = _collect_speaker_audio(waveform, sample_rate, speaker_turns, max_seconds=4.0)
+            if segment is not None:
+                embeddings[speaker] = backend.embed(segment, sample_rate)
+        return embeddings
+
+    def _label_embedding(self, embedding: List[float]) -> str:
+        if self._profiles is None:
+            self._profiles = self.profile_store.load()
+        profile_match = _best_embedding_match(embedding, self._profiles)
+        if profile_match and profile_match.score >= self.profile_threshold:
+            return profile_match.label
+
+        cluster_match = _best_embedding_match(embedding, self._clusters)
+        active_threshold = self.expected_split_threshold if self.expected_speakers and len(self._clusters) < self.expected_speakers else self.cluster_threshold
+        if cluster_match and cluster_match.score >= active_threshold:
+            self._clusters[cluster_match.label] = _mean_vectors([self._clusters[cluster_match.label], embedding])
+            return cluster_match.label
+        if self.expected_speakers and len(self._clusters) >= self.expected_speakers and cluster_match:
+            self._clusters[cluster_match.label] = _mean_vectors([self._clusters[cluster_match.label], embedding])
+            return cluster_match.label
+
+        label = f"Speaker {self._next_cluster}"
+        self._next_cluster += 1
+        self._clusters[label] = embedding
+        return label
+
+
 class _EmbeddingBackend:
     _instance: "_EmbeddingBackend | None" = None
 
@@ -391,6 +461,17 @@ def _cosine_similarity(left: List[float], right: List[float]) -> float:
     if not left or not right or len(left) != len(right):
         return -1.0
     return sum(a * b for a, b in zip(left, right))
+
+
+def _best_embedding_match(embedding: List[float] | None, candidates: Dict[str, List[float]]) -> SpeakerMatch | None:
+    if not embedding:
+        return None
+    best: SpeakerMatch | None = None
+    for label, candidate_embedding in candidates.items():
+        score = _cosine_similarity(embedding, candidate_embedding)
+        if best is None or score > best.score:
+            best = SpeakerMatch(label=label, score=score)
+    return best
 
 
 def _unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
