@@ -522,7 +522,6 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   const contentKey = `${contentMode}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.speaker ?? ""}::${transcript[transcript.length - 1]?.text ?? ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
-  const hasLiveSpeakers = options.livePreview && transcript.some((turn) => turn.speaker && turn.speaker !== "Live");
   updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels, livePreview: options.livePreview });
 
   speakerEditor.innerHTML = options.skipSpeakerEditor ? "" : speakers.map((speaker) => {
@@ -542,14 +541,10 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   _lastTranscriptKey = contentKey;
 
   const shouldFollowTranscript = options.follow || isTranscriptNearBottom();
-  transcriptEl.className = (options.noSpeakerLabels || (options.livePreview && !hasLiveSpeakers)) ? "transcript transcript-plain" : "transcript";
+  transcriptEl.className = (options.noSpeakerLabels || options.livePreview) ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn, index) => {
-    if (options.noSpeakerLabels) {
+    if (options.noSpeakerLabels || options.livePreview) {
       return renderTurnHtml(turn, index, "", options);
-    }
-    if (options.livePreview) {
-      const label = hasLiveSpeakers ? (speakerNames[turn.speaker] || turn.speaker) : "";
-      return renderTurnHtml(turn, index, label, options);
     }
     const label = speakerNames[turn.speaker] || turn.speaker;
     return renderTurnHtml(turn, index, label, options);
