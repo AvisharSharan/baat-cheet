@@ -49,25 +49,42 @@ class MomGenerationClient:
             speaker_labels_enabled=speaker_labels_enabled,
             mom_type=mom_type,
         )
-        response = await self._post_chat(prompt)
+        content = await self.complete(prompt, system_prompt=SYSTEM_PROMPT)
+        return _normalize_mom_markdown(content)
+
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Run the currently selected AI model for a non-streaming text task."""
+        response = await self._post_chat(prompt, system_prompt=system_prompt, max_tokens=max_tokens)
         if response.status_code >= 400:
             detail = _response_error_detail(response)
-            raise MomGenerationError(f"{self.provider} MoM generation failed with status {response.status_code}: {detail}")
+            raise MomGenerationError(f"{self.provider} AI request failed with status {response.status_code}: {detail}")
 
         data = response.json()
         if self.provider == "ollama":
             try:
-                return _normalize_mom_markdown(data["message"]["content"].strip())
+                return data["message"]["content"].strip()
             except (KeyError, TypeError) as exc:
-                raise MomGenerationError("Ollama response did not include generated MoM content.") from exc
+                raise MomGenerationError("Ollama response did not include generated content.") from exc
 
         try:
-            return _normalize_mom_markdown(data["choices"][0]["message"]["content"].strip())
+            return data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError) as exc:
-            raise MomGenerationError("Chat completion response did not include generated MoM content.") from exc
+            raise MomGenerationError("Chat completion response did not include generated content.") from exc
 
-    async def _post_chat(self, prompt: str) -> httpx.Response:
-        payload = self._payload(prompt)
+    async def _post_chat(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str,
+        max_tokens: int | None = None,
+    ) -> httpx.Response:
+        payload = self._payload(prompt, system_prompt=system_prompt, max_tokens=max_tokens)
         url = self._chat_url()
         headers = {}
         if self.provider == "hosted":
@@ -86,16 +103,17 @@ class MomGenerationClient:
                     await asyncio.sleep(2 ** (attempt + 1))
         return last_response
 
-    def _payload(self, prompt: str) -> dict:
+    def _payload(self, prompt: str, *, system_prompt: str, max_tokens: int | None = None) -> dict:
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
+        output_tokens = max_tokens or self.max_tokens
         if self.provider == "ollama":
             options = {
                 "temperature": 0.1,
                 "num_ctx": env_int("OLLAMA_NUM_CTX", 32768),
-                "num_predict": self.max_tokens,
+                "num_predict": output_tokens,
                 "num_gpu": env_int("OLLAMA_NUM_GPU", 0),
             }
             return {
@@ -107,7 +125,7 @@ class MomGenerationClient:
         return {
             "model": self.model,
             "temperature": 0.1,
-            "max_tokens": self.max_tokens,
+            "max_tokens": output_tokens,
             "messages": messages,
         }
 

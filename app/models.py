@@ -38,6 +38,9 @@ class MeetingState(BaseModel):
     error: str | None = None
     visible_in_history: bool = True
     transcript: list[SpeakerTurn] = Field(default_factory=list)
+    transcript_translation: list[SpeakerTurn] = Field(default_factory=list)
+    translation_language: str | None = None
+    translation_error: str | None = None
     speaker_names: dict[str, str] = Field(default_factory=dict)
     speaker_embeddings: dict[str, list[float]] = Field(default_factory=dict)
     voiceprint_status: str = "pending"
@@ -114,6 +117,9 @@ class MeetingStatusResponse(BaseModel):
     completed_at: datetime | None = None
     error: str | None = None
     transcript: list[SpeakerTurn] = Field(default_factory=list)
+    transcript_translation: list[SpeakerTurn] = Field(default_factory=list)
+    translation_language: str | None = None
+    translation_error: str | None = None
     speaker_names: dict[str, str] = Field(default_factory=dict)
     speaker_labels_enabled: bool = True
     voiceprints_ready: bool = False
@@ -136,6 +142,9 @@ class MeetingStatusResponse(BaseModel):
             completed_at=state.completed_at,
             error=state.error,
             transcript=state.transcript,
+            transcript_translation=state.transcript_translation,
+            translation_language=state.translation_language,
+            translation_error=state.translation_error,
             speaker_names=state.speaker_names,
             speaker_labels_enabled=state.speaker_labels_enabled,
             voiceprints_ready=bool(state.speaker_embeddings),

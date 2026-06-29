@@ -27,6 +27,7 @@ from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
 from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_preview
+from .services.translation import TranscriptTranslationClient
 from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
 
@@ -65,7 +66,7 @@ store = MeetingStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     for meeting in store.list():
-        if meeting.status in {MeetingStatus.TRANSCRIBING, MeetingStatus.GENERATING}:
+        if meeting.status in {MeetingStatus.TRANSCRIBING, MeetingStatus.TRANSLATING, MeetingStatus.GENERATING}:
             meeting.status = MeetingStatus.FAILED
             meeting.error = "Server restarted before task could complete."
             meeting.completed_at = datetime.now(timezone.utc)
@@ -457,6 +458,10 @@ async def update_transcript_turn(
     _: CurrentUser = Depends(current_user),
 ) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
+    if meeting.status in {MeetingStatus.TRANSLATING, MeetingStatus.GENERATING}:
+        raise HTTPException(status_code=409, detail="Wait for the current AI action to finish.")
+    if meeting.transcript_translation:
+        raise HTTPException(status_code=409, detail="The transcript cannot be edited after its one-time translation.")
     if not 0 <= update.index < len(meeting.transcript):
         raise HTTPException(status_code=422, detail="Transcript turn index is out of range.")
     text = update.text.strip()
@@ -491,7 +496,7 @@ async def generate_mom(
     meeting = _get_meeting(meeting_id)
     if not meeting.transcript:
         raise HTTPException(status_code=409, detail="No transcript is available.")
-    if meeting.status in {MeetingStatus.UPLOADED, MeetingStatus.TRANSCRIBING, MeetingStatus.GENERATING}:
+    if meeting.status in {MeetingStatus.UPLOADED, MeetingStatus.TRANSCRIBING, MeetingStatus.TRANSLATING, MeetingStatus.GENERATING}:
         raise HTTPException(status_code=409, detail="Transcription must be complete before generating MoM.")
 
     meeting.status = MeetingStatus.GENERATING
@@ -501,10 +506,39 @@ async def generate_mom(
     return MeetingStatusResponse.from_state(meeting)
 
 
+@app.post("/api/meetings/{meeting_id}/translate", response_model=MeetingStatusResponse)
+async def translate_transcript(
+    meeting_id: str,
+    _: CurrentUser = Depends(current_user),
+) -> MeetingStatusResponse:
+    meeting = _get_meeting(meeting_id)
+    if not meeting.transcript:
+        raise HTTPException(status_code=409, detail="No transcript is available.")
+    if meeting.transcript_translation:
+        raise HTTPException(status_code=409, detail="This transcript has already been translated.")
+    if meeting.voiceprint_status in {"pending", "processing"}:
+        raise HTTPException(status_code=409, detail="Wait for speaker processing to finish.")
+    if meeting.status in {
+        MeetingStatus.UPLOADED,
+        MeetingStatus.TRANSCRIBING,
+        MeetingStatus.TRANSLATING,
+        MeetingStatus.GENERATING,
+    }:
+        raise HTTPException(status_code=409, detail="Wait for the current meeting action to finish.")
+
+    return_status = MeetingStatus.READY if meeting.mom_markdown else MeetingStatus.TRANSCRIBED
+    meeting.status = MeetingStatus.TRANSLATING
+    meeting.error = None
+    meeting.translation_error = None
+    store.update(meeting)
+    _start_meeting_task(meeting_id, translate_meeting_transcript(meeting_id, return_status))
+    return MeetingStatusResponse.from_state(meeting)
+
+
 @app.post("/api/meetings/{meeting_id}/cancel", response_model=MeetingStatusResponse)
 async def cancel_meeting_action(meeting_id: str, _: CurrentUser = Depends(current_user)) -> MeetingStatusResponse:
     meeting = _get_meeting(meeting_id)
-    if meeting.status not in {MeetingStatus.UPLOADED, MeetingStatus.TRANSCRIBING, MeetingStatus.GENERATING}:
+    if meeting.status not in {MeetingStatus.UPLOADED, MeetingStatus.TRANSCRIBING, MeetingStatus.TRANSLATING, MeetingStatus.GENERATING}:
         raise HTTPException(status_code=409, detail="No active transcription or MoM generation to cancel.")
 
     _cancel_running_task(meeting_id)
@@ -515,6 +549,27 @@ async def cancel_meeting_action(meeting_id: str, _: CurrentUser = Depends(curren
     meeting.error = "Canceled by user."
     store.update(meeting)
     return MeetingStatusResponse.from_state(meeting)
+
+
+async def translate_meeting_transcript(meeting_id: str, return_status: MeetingStatus) -> None:
+    meeting = store.get(meeting_id)
+    try:
+        translation, target_language = await TranscriptTranslationClient().translate(meeting.transcript)
+        # Save atomically only after every chunk and transcript turn has passed validation.
+        meeting.transcript_translation = translation
+        meeting.translation_language = target_language
+        meeting.translation_error = None
+        meeting.status = return_status
+    except asyncio.CancelledError:
+        meeting.status = MeetingStatus.CANCELED
+        meeting.translation_error = "Translation canceled by user."
+        raise
+    except Exception as exc:
+        meeting.status = return_status
+        meeting.translation_error = _short_error(exc)
+    finally:
+        _finish_meeting_task(meeting_id)
+        _safe_update_meeting(meeting)
 
 
 async def generate_mom_for_meeting(meeting_id: str, mom_type: str = "auto") -> None:

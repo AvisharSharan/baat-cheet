@@ -334,9 +334,16 @@ function renderState(data) {
       noSpeakerLabels: !speakerLabelsEnabled && finalTranscript.length > 0,
       livePreview: showingLivePreview,
       follow: isTranscribing || !finalTranscript.length,
-      editable: finalTranscript.length > 0 && !isTranscribing,
+      editable: finalTranscript.length > 0
+        && !["uploaded", "transcribing", "translating", "generating"].includes(data.status)
+        && !(data.transcript_translation || []).length,
+      translation: data.transcript_translation || [],
+      translationLanguage: data.translation_language || "",
     },
   );
+  if (data.translation_error && data.status !== "translating") {
+    setStatus(`Translation failed: ${shortStatusError(data.translation_error)}`);
+  }
   if (data.mom_markdown) {
     setMomGenerating(false);
     momOutput.classList.remove("mom-empty");
@@ -470,21 +477,30 @@ function showMeeting() {
 }
 
 function updateControls(data, finalTranscript) {
-  const busy = data.status === "transcribing" || data.status === "generating";
+  const busy = data.status === "transcribing" || data.status === "translating" || data.status === "generating";
   const speakerLabelsEnabled = data.speaker_labels_enabled !== false;
   const voiceprintsReady = data.voiceprints_ready || data.voiceprint_status === "ready";
+  const speakerProcessing = ["pending", "processing"].includes(data.voiceprint_status);
   setUploadBusy(busy);
-  momBtn.disabled = !finalTranscript.length || data.status === "generating";
+  momBtn.disabled = !finalTranscript.length || busy;
+  const translated = Boolean(data.transcript_translation && data.transcript_translation.length);
+  translateBtn.disabled = !finalTranscript.length || busy || speakerProcessing || translated;
+  translateBtn.textContent = translated
+    ? `Translated to ${data.translation_language || "target language"}`
+    : (data.status === "translating" ? "Translating..." : "Translate");
+  translationToggleBtn.hidden = !translated;
+  translationToggleBtn.textContent = isTranscriptTranslationVisible ? "Hide translation" : "Show translation";
   momType.disabled = busy;
   cancelActionBtn.hidden = !busy;
   cancelActionBtn.disabled = !busy;
-  saveSpeakersBtn.disabled = !speakerLabelsEnabled || !finalTranscript.length;
+  saveSpeakersBtn.disabled = busy || !speakerLabelsEnabled || !finalTranscript.length;
   rememberVoices.disabled = !speakerLabelsEnabled || !finalTranscript.length || !voiceprintsReady;
   rememberVoices.title = voiceprintHint(data);
 }
 
 // Stable key — skip redundant DOM rewrites when content hasn't changed
 var _lastTranscriptKey = null;
+var isTranscriptTranslationVisible = true;
 
 function isTranscriptNearBottom() {
   return transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight < 80;
@@ -520,7 +536,8 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   // Key changes only when new turns arrive or the last turn's text updates
   const speakerNameKey = JSON.stringify(speakerNames || {});
   const contentMode = options.livePreview ? "live" : (options.noSpeakerLabels ? "plain" : "labels");
-  const contentKey = `${contentMode}::${speakerNameKey}::${transcript.length}::${transcript[transcript.length - 1]?.speaker ?? ""}::${transcript[transcript.length - 1]?.text ?? ""}`;
+  const translation = isTranscriptTranslationVisible && Array.isArray(options.translation) ? options.translation : [];
+  const contentKey = `${contentMode}::${speakerNameKey}::${JSON.stringify(transcript)}::${JSON.stringify(translation)}::${options.translationLanguage || ""}`;
 
   const speakers = [...new Set(transcript.map((turn) => turn.speaker))];
   updateMetrics(transcript, { noSpeakerLabels: options.noSpeakerLabels, livePreview: options.livePreview });
@@ -545,22 +562,25 @@ function renderTranscript(transcript, speakerNames, options = {}) {
   transcriptEl.className = (options.noSpeakerLabels || options.livePreview) ? "transcript transcript-plain" : "transcript";
   transcriptEl.innerHTML = transcript.map((turn, index) => {
     if (options.noSpeakerLabels || options.livePreview) {
-      return renderTurnHtml(turn, index, "", options);
+      return renderTurnHtml(turn, index, "", options, translation[index]);
     }
     const label = speakerNames[turn.speaker] || turn.speaker;
-    return renderTurnHtml(turn, index, label, options);
+    return renderTurnHtml(turn, index, label, options, translation[index]);
   }).join("");
   bindTranscriptEditControls();
   if (shouldFollowTranscript) scrollTranscriptToBottom();
 }
 
-function renderTurnHtml(turn, index, label, options = {}) {
+function renderTurnHtml(turn, index, label, options = {}, translatedTurn = null) {
   const editing = editingTranscriptIndex === index;
   const speaker = label ? `<span class="speaker">${escapeHtml(label)}</span>` : "";
   const editButton = options.editable
     ? `<button class="turn-edit-btn" type="button" data-index="${index}" title="Edit transcript" aria-label="Edit transcript turn">
         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m13.5 6.5 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>`
+    : "";
+  const translated = translatedTurn && translatedTurn.text
+    ? `<div class="turn-translation"><span class="translation-label">${escapeHtml(options.translationLanguage || "Translation")}</span><div class="turn-text">${escapeHtml(translatedTurn.text)}</div></div>`
     : "";
   const body = editing
     ? `<div class="turn-editor">
@@ -570,7 +590,7 @@ function renderTurnHtml(turn, index, label, options = {}) {
           <button class="btn btn-ghost btn-sm turn-cancel-btn" type="button">Cancel</button>
         </div>
       </div>`
-    : `<div class="turn-text">${escapeHtml(turn.text)}</div>`;
+    : `<div class="turn-text">${escapeHtml(turn.text)}</div>${translated}`;
   return `<div class="turn" data-index="${index}">
     <div class="turn-main">
       <div class="turn-content">${speaker}${body}</div>
@@ -671,6 +691,32 @@ async function generateMom(options = {}) {
   if (!pollTimer) pollTimer = window.setInterval(pollStatus, 2500);
 }
 
+async function translateTranscript() {
+  if (!meetingId || translateBtn.disabled) return;
+  isTranscriptTranslationVisible = true;
+  setStatus("Translating transcript...");
+  translateBtn.disabled = true;
+  translateBtn.textContent = "Translating...";
+  const response = await apiFetch(`/api/meetings/${meetingId}/translate`, { method: "POST" });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    setStatus(error.detail || "Could not start translation");
+    translateBtn.disabled = false;
+    translateBtn.textContent = "Translate";
+    return;
+  }
+  renderState(await response.json());
+  pollStatus();
+  if (!pollTimer) pollTimer = window.setInterval(pollStatus, 2500);
+}
+
+function toggleTranscriptTranslation() {
+  isTranscriptTranslationVisible = !isTranscriptTranslationVisible;
+  translationToggleBtn.textContent = isTranscriptTranslationVisible ? "Hide translation" : "Show translation";
+  _lastTranscriptKey = null;
+  pollStatus();
+}
+
 function editMom() {
   if (momOutput.classList.contains("mom-empty")) return;
   momOutput.style.display = "none";
@@ -737,7 +783,7 @@ function setStatus(text) {
   const n = String(text).toLowerCase();
   if (n.includes("recording")) {
     document.body.dataset.state = "recording";
-  } else if (n.includes("upload") || n.includes("transcrib") || n.includes("drafting")) {
+  } else if (n.includes("upload") || n.includes("transcrib") || n.includes("translat") || n.includes("drafting")) {
     document.body.dataset.state = "processing";
   } else {
     document.body.dataset.state = "";
@@ -748,6 +794,7 @@ function statusLabel(data) {
   if (data.error) return `${data.status}: ${shortStatusError(data.error)}`;
   if (data.status === "uploaded") return "Uploaded";
   if (data.status === "transcribing") return "Transcribing";
+  if (data.status === "translating") return "Translating transcript";
   if (data.status === "transcribed" && data.voiceprint_status === "processing") return "Matching saved speaker profiles";
   if (data.status === "transcribed") return "Transcript ready";
   if (data.status === "generating") return "Drafting minutes";
@@ -780,6 +827,10 @@ function resetSessionOutput() {
     : "Transcribe the meeting first, then click Draft Minutes to generate AI-powered minutes.";
   cancelActionBtn.hidden = true;
   cancelActionBtn.disabled = true;
+  translateBtn.disabled = true;
+  translateBtn.textContent = "Translate";
+  translationToggleBtn.hidden = true;
+  isTranscriptTranslationVisible = true;
   renderTranscript([], {});
   updateWorkflowUI();
 }

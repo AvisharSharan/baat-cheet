@@ -163,7 +163,7 @@ def _preload_faster_whisper_runtime() -> None:
 
 def _preload_indic_conformer_runtime() -> None:
     client = IndicConformerPyannoteTranscriptionClient()
-    device = _effective_indic_conformer_device(client.device)
+    device = client.device
     logger.info("Preloading Indic Conformer model '%s' on %s.", client.model_name, device)
     with _quiet_preload_output():
         _get_indic_conformer_model(client.model_name, device, client.hf_token)
@@ -577,7 +577,6 @@ def _transcribe_with_indic_conformer(
         ) from exc
 
     _quiet_speech_runtime_warnings()
-    device = _effective_indic_conformer_device(device)
     model = _get_indic_conformer_model(model_name, device, hf_token)
     waveform, sample_rate = torchaudio.load(audio_path)
     if waveform.shape[0] > 1:
@@ -592,15 +591,7 @@ def _transcribe_with_indic_conformer(
     try:
         output = _run_indic_conformer_model(model, waveform, language, decoder, torch)
     except Exception as exc:
-        if device != "cpu":
-            logger.warning("Indic Conformer failed on %s; retrying on CPU. Reason: %s", device, _short_error(exc))
-            model = _get_indic_conformer_model(model_name, "cpu", hf_token)
-            try:
-                output = _run_indic_conformer_model(model, waveform.cpu(), language, decoder, torch)
-            except Exception as cpu_exc:
-                raise _indic_conformer_runtime_error(cpu_exc) from cpu_exc
-        else:
-            raise _indic_conformer_runtime_error(exc) from exc
+        raise _indic_conformer_runtime_error(exc) from exc
     return _normalize_indic_conformer_output(output)
 
 
@@ -651,10 +642,7 @@ def _get_indic_conformer_model(model_name: str, device: str, hf_token: str | Non
             try:
                 model.to(torch_device)
             except Exception as exc:
-                if _is_cuda_runtime_error(exc):
-                    logger.warning("Could not move Indic Conformer to %s; using CPU instead.", device)
-                else:
-                    raise TranscriptionError(f"Could not move Indic Conformer to {device}.") from exc
+                raise TranscriptionError(f"Could not move Indic Conformer to {device}.") from exc
         if hasattr(model, "eval"):
             model.eval()
         _INDIC_CONFORMER_MODEL_CACHE[cache_key] = model
@@ -856,21 +844,6 @@ def _quiet_speech_runtime_warnings() -> None:
     warnings.filterwarnings("ignore", message=r"(?s).*TensorFloat-32 \(TF32\) has been disabled.*")
     warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*", category=UserWarning)
     warnings.filterwarnings("ignore", message=r"(?s).*detected number of speakers.*outside.*given bounds.*", category=UserWarning)
-
-
-def _effective_indic_conformer_device(device: str) -> str:
-    selected = (device or "cpu").strip().lower()
-    if not selected.startswith("cuda"):
-        return selected
-    try:
-        import onnxruntime
-
-        if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
-            logger.info("ONNX Runtime CUDA provider is unavailable; using CPU for Indic Conformer.")
-            return "cpu"
-    except Exception:
-        return selected
-    return selected
 
 
 @contextlib.contextmanager
