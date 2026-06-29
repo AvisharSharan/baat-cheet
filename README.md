@@ -5,6 +5,11 @@ accepts uploaded media, creates a transcript with a local speech stack or
 Sarvam Saaras v3, helps review speaker labels, and drafts structured Minutes of
 Meeting with Ollama or another OpenAI-compatible chat provider.
 
+Completed transcripts can also be translated once between Hindi and English
+using the currently selected AI provider and model. Long transcripts are
+translated in validated chunks and the saved translation can be shown or
+hidden without another model call.
+
 The app is a FastAPI backend with a static browser UI. Meeting history,
 transcripts, generated minutes, and optional speaker voice profiles are stored
 on the local machine.
@@ -19,9 +24,12 @@ on the local machine.
 - Optional speaker diarization through pyannote locally or Sarvam batch output.
 - Plain transcript mode when speaker labels are disabled.
 - Transcript editing before minutes generation.
+- One-time Hindi-to-English or English-to-Hindi transcript translation through the selected AI model.
+- Chunk validation and retries prevent partial translations from being saved.
+- Show/hide translation toggle while preserving the saved translated transcript.
 - Speaker label editing with optional remembered voice profiles through SpeechBrain.
 - Meeting-type presets for auto, government, review, planning, action tracker, and general meetings.
-- Cancel support for active transcription or minutes generation jobs.
+- Cancel support for active transcription, translation, or minutes generation jobs.
 - Meeting history with reopen, refresh, and delete controls.
 - Markdown and PDF exports for generated minutes.
 - Light/dark theme toggle.
@@ -44,6 +52,9 @@ Local speech stack or Sarvam batch transcription
         v
 Review transcript and speaker labels
         |
+        +--> optional one-time Hindi/English translation
+        |        (chunked, validated, and saved with the transcript)
+        |
         v
 Draft minutes through Ollama or hosted chat
         |
@@ -64,6 +75,7 @@ is persisted separately as JSON.
 - `app/services/live_transcription.py` - live-caption overlap cleanup.
 - `app/services/speaker_id.py` - optional SpeechBrain voice profile matching.
 - `app/services/mom.py` - MoM prompt and chat-provider client.
+- `app/services/translation.py` - chunked Hindi-English translation and completeness validation.
 - `app/services/export.py` - Markdown-to-PDF export.
 - `app/templates/` - Jinja templates for the static UI.
 - `app/static/` - CSS, JavaScript, and audio worklet assets.
@@ -177,6 +189,11 @@ OLLAMA_NUM_CTX=32768
 MOM_MAX_TOKENS=1200
 MOM_TIMEOUT_S=240
 MOM_RETRIES=2
+
+# Transcript translation through the selected MOM_PROVIDER and model.
+TRANSLATION_CHUNK_CHARS=5000
+TRANSLATION_MAX_TOKENS=4096
+TRANSLATION_VALIDATION_RETRIES=2
 ```
 
 Optional hosted or OpenAI-compatible minutes generation:
@@ -230,9 +247,11 @@ Sign in with `LOCAL_AUTH_USERNAME` and `LOCAL_AUTH_PASSWORD`.
 7. Record or upload the media.
 8. Review the transcript and edit any turn that needs correction.
 9. Rename speakers and optionally check `Remember voices` before saving labels.
-10. Choose a meeting type and click `Draft Minutes`.
-11. Download Markdown or PDF exports once minutes are ready.
-12. Use `History` to reopen or delete past meetings.
+10. Optionally click `Translate` to translate the complete transcript into Hindi or English, based on its detected language.
+11. Use `Hide translation` or `Show translation` to change visibility without deleting or regenerating it.
+12. Choose a meeting type and click `Draft Minutes`.
+13. Download Markdown or PDF exports once minutes are ready.
+14. Use `History` to reopen or delete past meetings.
 
 ## Notes
 
@@ -246,6 +265,10 @@ Sign in with `LOCAL_AUTH_USERNAME` and `LOCAL_AUTH_PASSWORD`.
 - Speaker labels are skipped when the UI toggle is off, when `DIARIZATION_PROVIDER=none`, or when the expected speaker count is `1`.
 - Voice profiles are local similarity embeddings, not calibrated identity proof.
 - MoM generation is extractive by prompt: the model is told not to invent owners, due dates, decisions, or action items.
+- Translation uses the same provider and model selected for minutes generation. Ollama keeps transcript text local; hosted providers receive transcript chunks.
+- The model detects whether the transcript is predominantly Hindi or English, then translates it into the other language.
+- Every translation fragment has a stable ID. Missing, duplicated, empty, invalid, or truncated responses are retried, and no translation is saved unless every chunk validates.
+- Translation is generated only once per meeting and is persisted alongside the original transcript. Transcript text editing is disabled afterward to preserve turn alignment.
 - Export links include the current auth token as a query parameter so browser downloads can work without custom headers.
 - `data/` and pretrained model folders are ignored by git.
 
@@ -256,11 +279,12 @@ Sign in with `LOCAL_AUTH_USERNAME` and `LOCAL_AUTH_PASSWORD`.
 - `WS /api/live/transcribe` - local live-caption preview websocket.
 - `POST /api/meetings/audio` - upload audio/video and start transcription.
 - `GET /api/meetings` - list meeting history.
-- `GET /api/meetings/{meeting_id}/status` - fetch transcript, labels, voiceprint status, and minutes.
+- `GET /api/meetings/{meeting_id}/status` - fetch transcript, translation, labels, voiceprint status, and minutes.
 - `PATCH /api/meetings/{meeting_id}/transcript` - edit one transcript turn.
 - `PATCH /api/meetings/{meeting_id}/speakers` - save speaker labels and optionally remember voices.
 - `POST /api/meetings/{meeting_id}/mom` - start minutes generation.
-- `POST /api/meetings/{meeting_id}/cancel` - cancel active transcription or minutes generation.
+- `POST /api/meetings/{meeting_id}/translate` - generate and save the complete one-time transcript translation.
+- `POST /api/meetings/{meeting_id}/cancel` - cancel active transcription, translation, or minutes generation.
 - `DELETE /api/meetings/{meeting_id}` - delete a meeting from history.
 - `GET /api/meetings/{meeting_id}/export.md` - download generated minutes as Markdown.
 - `GET /api/meetings/{meeting_id}/export.pdf` - download generated minutes as PDF.
@@ -276,5 +300,5 @@ python -m pytest -q
 Compile-check Python files:
 
 ```powershell
-python -m py_compile app\main.py app\models.py app\auth.py app\storage.py app\services\transcription.py app\services\mom.py app\services\speaker_id.py app\services\voiceprint_worker.py app\services\live_transcription.py app\services\export.py
+python -m py_compile app\main.py app\models.py app\auth.py app\storage.py app\services\transcription.py app\services\translation.py app\services\mom.py app\services\speaker_id.py app\services\voiceprint_worker.py app\services\live_transcription.py app\services\export.py
 ```
