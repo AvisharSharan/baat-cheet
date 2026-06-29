@@ -114,7 +114,7 @@ class MomGenerationClient:
                 "temperature": 0.1,
                 "num_ctx": env_int("OLLAMA_NUM_CTX", 32768),
                 "num_predict": output_tokens,
-                "num_gpu": env_int("OLLAMA_NUM_GPU", 0),
+                "num_gpu": env_int("OLLAMA_NUM_GPU", 35),
             }
             return {
                 "model": self.model,

@@ -32,7 +32,7 @@ _SCHEMA: dict[str, tuple[str, str]] = {
     "hosted_api_key":    ("HOSTED_AI_API_KEY",     ""),
     "mom_max_tokens":    ("MOM_MAX_TOKENS",        "1200"),
     "ollama_num_ctx":    ("OLLAMA_NUM_CTX",        "32768"),
-    "ollama_num_gpu":    ("OLLAMA_NUM_GPU",        "0"),
+    "ollama_num_gpu":    ("OLLAMA_NUM_GPU",        "35"),
     # Transcription
     "transcription_provider": ("TRANSCRIPTION_PROVIDER", "local"),
     "whisper_model":     ("FASTER_WHISPER_MODEL",  "base"),

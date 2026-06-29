@@ -49,7 +49,7 @@ async function loadAppSettings() {
     document.getElementById("settHostedApiModel").value = s.hosted_api_model || "deepseek-ai/DeepSeek-V4-Flash";
     document.getElementById("settMaxTokens").value = s.mom_max_tokens || "";
     document.getElementById("settNumCtx").value = s.ollama_num_ctx || "";
-    document.getElementById("settNumGpu").value = s.ollama_num_gpu || "";
+    document.getElementById("settNumGpu").value = s.ollama_num_gpu || "35";
 
     // Speech-to-text / transcription
     var provider = s.transcription_provider || "local";

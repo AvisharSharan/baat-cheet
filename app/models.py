@@ -163,7 +163,7 @@ class SettingsResponse(BaseModel):
     hosted_api_configured: bool = False
     mom_max_tokens: str = "1200"
     ollama_num_ctx: str = "32768"
-    ollama_num_gpu: str = "0"
+    ollama_num_gpu: str = "35"
     transcription_provider: str = "local"
     whisper_model: str = "base"
     whisper_device: str = "cuda"
