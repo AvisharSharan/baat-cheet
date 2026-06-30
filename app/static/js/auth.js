@@ -87,38 +87,48 @@ function showApp(username) {
   loadHistory();
 }
 
-// Count consecutive 401s from background calls before deciding to log out.
-// A single transient 401 (server busy, momentary restart) must not boot the user.
-var _consecutiveAuthFailures = 0;
-var _AUTH_FAILURE_THRESHOLD = 3;
+var _isRefreshing = false;
+var _refreshPromise = null;
 
 async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
-  const response = await fetch(url, { ...options, headers });
-  if (response.status === 401) {
-    // Already on the login screen — don't disrupt typing.
-    if (!loginView.hidden) return response;
+  let response = await fetch(url, { ...options, headers });
 
-    _consecutiveAuthFailures += 1;
-    if (_consecutiveAuthFailures >= _AUTH_FAILURE_THRESHOLD) {
-      // Multiple consecutive 401s — confirm the session is truly gone.
-      const stillAuthenticated = await verifyCurrentSession();
-      if (!stillAuthenticated) {
-        _consecutiveAuthFailures = 0;
+  if (response.status === 401) {
+    if (!loginView.hidden || url.includes("/api/auth/refresh") || url.includes("/api/auth/login")) {
+      return response;
+    }
+
+    if (!_isRefreshing) {
+      _isRefreshing = true;
+      _refreshPromise = fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${authToken}` }
+      }).then(async (res) => {
+        if (!res.ok) throw new Error("Refresh failed");
+        const data = await res.json();
+        authToken = data.access_token;
+        localStorage.setItem(authTokenKey, authToken);
+      }).catch((err) => {
         authToken = "";
         localStorage.removeItem(authTokenKey);
         showLogin();
-      } else {
-        // verifyCurrentSession says we're fine — transient issue, reset counter.
-        _consecutiveAuthFailures = 0;
-      }
+        throw err;
+      }).finally(() => {
+        _isRefreshing = false;
+      });
     }
-    // Return the raw 401 response so callers can handle it (e.g. skip rendering).
-    return response;
+
+    try {
+      await _refreshPromise;
+      const retryHeaders = new Headers(options.headers || {});
+      retryHeaders.set("Authorization", `Bearer ${authToken}`);
+      response = await fetch(url, { ...options, headers: retryHeaders });
+    } catch (error) {
+      return response;
+    }
   }
-  // Successful response — reset the failure counter.
-  _consecutiveAuthFailures = 0;
   return response;
 }
 

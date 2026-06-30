@@ -127,7 +127,6 @@ async function createLiveSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const params = new URLSearchParams({
     sample_rate: String(liveSampleRate),
-    chunk_seconds: "5",
     speaker_labels_enabled: speakerLabelsToggle.checked ? "1" : "0",
     token: authToken,
   });
@@ -303,7 +302,7 @@ async function uploadMeetingFile(file, filename) {
 
 async function pollStatus() {
   if (!meetingId) return;
-  const response = await apiFetch(`/api/meetings/${meetingId}/status`);
+  const response = await apiFetch(`/api/meetings/${meetingId}/status?include_mom=true`);
   // Skip rendering on error responses (401, 404, 5xx) — a transient server
   // hiccup during a long AI task must not corrupt UI state or trigger logout.
   if (!response.ok) return;
@@ -353,14 +352,14 @@ function renderState(data) {
     momOutput.textContent = data.mom_markdown;
     editMomBtn.style.display = "inline-flex";
     exportLinks.innerHTML = `
-      <a href="/api/meetings/${data.id}/export.md?token=${encodeURIComponent(authToken)}">
+      <button type="button" class="export-link-btn" onclick="downloadExport('${data.id}', 'md')">
         <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
         MD
-      </a>
-      <a href="/api/meetings/${data.id}/export.pdf?token=${encodeURIComponent(authToken)}">
+      </button>
+      <button type="button" class="export-link-btn" onclick="downloadExport('${data.id}', 'pdf')">
         <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 10V1h6l3 3v6H1Z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M7 1v3h3" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
         PDF
-      </a>`;
+      </button>`;
   }
   if (data.status !== "generating") setMomGenerating(false);
   updateControls(data, finalTranscript);
@@ -670,6 +669,11 @@ async function saveSpeakers() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ speakers, remember_voices: rememberVoices.checked }),
   });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    setStatus(err.detail || "Could not save speaker labels");
+    return;
+  }
   renderState(await response.json());
 }
 
@@ -778,6 +782,25 @@ function setMomGenerating(active) {
     panelMinutes.classList.remove("mom-generating");
     const label = panelMinutes.querySelector(".mom-generating-label");
     if (label) label.remove();
+  }
+}
+
+async function downloadExport(id, format) {
+  const url = `/api/meetings/${id}/export.${format}`;
+  try {
+    const response = await apiFetch(url);
+    if (!response.ok) { setStatus("Export failed"); return; }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `mom-${id}.${format}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    setStatus(`Export failed: ${error.message || "unknown error"}`);
   }
 }
 

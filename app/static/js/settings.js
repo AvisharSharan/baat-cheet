@@ -151,8 +151,12 @@ async function saveAppSettings() {
       diarization_provider: document.getElementById("settDiarization").value,
       voiceprinting_enabled: document.getElementById("settVoiceprinting").value,
     };
-    // Remove empty strings so we don't overwrite with blanks
-    Object.keys(body).forEach(function(k) { if (!body[k]) delete body[k]; });
+    // Only omit secret/key fields when blank (to avoid clearing configured secrets).
+    // Other empty values are sent so they can reset to default server-side.
+    var secretFields = ["hosted_api_key"];
+    secretFields.forEach(function(k) { if (body[k] === "" || body[k] == null) delete body[k]; });
+    // Remove any keys that are undefined
+    Object.keys(body).forEach(function(k) { if (body[k] == null) delete body[k]; });
 
     var resp = await apiFetch("/api/settings", {
       method: "PUT",
@@ -160,7 +164,9 @@ async function saveAppSettings() {
       body: JSON.stringify(body),
     });
     if (!resp.ok) throw new Error("Save failed");
-    window.currentSpeechEngineValue = document.getElementById("settSpeechEngine").value;
+    // Invalidate the cached speech engine value so the next recording
+    // session re-reads the freshly saved setting from the server.
+    window.currentSpeechEngineValue = null;
     closeSettings();
   } catch (e) {
     console.error("Failed to save settings", e);

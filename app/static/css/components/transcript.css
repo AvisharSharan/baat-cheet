@@ -355,7 +355,8 @@
   flex-wrap: wrap;
 }
 
-.export-links a {
+.export-links a,
+.export-links button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -370,10 +371,12 @@
   font-weight: 700;
   font-family: var(--font-mono);
   letter-spacing: 0.04em;
+  cursor: pointer;
   transition: all 0.15s;
 }
 
-.export-links a:hover {
+.export-links a:hover,
+.export-links button:hover {
   border-color: var(--gold);
   background: var(--gold-dim);
 }
