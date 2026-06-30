@@ -597,7 +597,13 @@ def _transcribe_with_indic_conformer(
 
 
 def _run_indic_conformer_model(model: Any, waveform: Any, language: str, decoder: str, torch: Any) -> Any:
-    with torch.inference_mode():
+    # Use no_grad() instead of inference_mode() due to TorchScript autograd issues,
+    # and disable JIT optimizations to prevent "default_program" NvFuser compilation errors 
+    # that often occur in PyTorch 2.x when running Indic Conformer.
+    with torch.no_grad():
+        if hasattr(torch.jit, "optimized_execution"):
+            with torch.jit.optimized_execution(False):
+                return model(waveform, language, decoder)
         return model(waveform, language, decoder)
 
 
