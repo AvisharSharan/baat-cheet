@@ -41,10 +41,23 @@ def load_auth_settings() -> LocalAuthSettings:
     username = os.getenv("LOCAL_AUTH_USERNAME", "admin")
     password_hash = os.getenv("LOCAL_AUTH_PASSWORD_HASH", "")
     raw_password = os.getenv("LOCAL_AUTH_PASSWORD", "admin")
+    secret = os.getenv("JWT_SECRET", "dev-local-jwt-secret-change-me")
+    if secret == "dev-local-jwt-secret-change-me":
+        import logging as _log
+        _log.getLogger(__name__).warning(
+            "JWT_SECRET is not set. Using the default insecure secret. "
+            "Set JWT_SECRET to a long random string before deploying."
+        )
+    if not password_hash and raw_password == "admin":
+        import logging as _log
+        _log.getLogger(__name__).warning(
+            "Using the default password 'admin'. "
+            "Set LOCAL_AUTH_PASSWORD or LOCAL_AUTH_PASSWORD_HASH in your .env file."
+        )
     return LocalAuthSettings(
         username=username,
         password_hash=password_hash or hash_password(raw_password),
-        secret=os.getenv("JWT_SECRET", "dev-local-jwt-secret-change-me"),
+        secret=secret,
         expires_minutes=env_int("JWT_EXPIRES_MINUTES", 12 * 60),
     )
 
@@ -94,6 +107,24 @@ def user_from_authorization(authorization: str | None) -> CurrentUser:
     if not authorization or not authorization.startswith("Bearer "):
         raise _unauthorized()
     return user_from_token(authorization.removeprefix("Bearer ").strip())
+
+
+def user_from_expired_token(authorization: str | None = Header(default=None)) -> CurrentUser:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise _unauthorized()
+    token = authorization.removeprefix("Bearer ").strip()
+    settings = load_auth_settings()
+    try:
+        payload = _decode_jwt(token, settings.secret)
+    except ValueError as exc:
+        raise _unauthorized() from exc
+    username = str(payload.get("sub", ""))
+    exp = int(payload.get("exp", 0))
+    if exp + (7 * 24 * 60 * 60) < int(time.time()):
+        raise _unauthorized()
+    if not hmac.compare_digest(username, settings.username):
+        raise _unauthorized()
+    return CurrentUser(username=username)
 
 
 def user_from_token(token: str | None) -> CurrentUser:
@@ -163,13 +194,6 @@ def _b64url(value: bytes) -> str:
 def _b64decode(value: str) -> bytes:
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(f"{value}{padding}")
-
-
-def env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
 
 
 def _unauthorized() -> HTTPException:

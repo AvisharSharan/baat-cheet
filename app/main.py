@@ -26,7 +26,7 @@ from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
 from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime, voiceprinting_enabled
-from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, diarize_live_text, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_diarized_preview, transcribe_live_preview
+from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_preview
 from .services.translation import TranscriptTranslationClient
 from .services.live_transcription import new_suffix
 from .storage import MeetingStore, delete_temp_file
@@ -126,30 +126,6 @@ def _query_int(value: str | None) -> int | None:
     except ValueError:
         return None
     return parsed if 1 <= parsed <= 10 else None
-
-
-def _live_diarization_enabled(speaker_labels_enabled: bool) -> bool:
-    return speaker_labels_enabled and _env_flag("LIVE_DIARIZATION_ENABLED", default=True)
-
-
-async def _auto_label_live_turns(audio_path: str, turns: list[SpeakerTurn]) -> list[SpeakerTurn]:
-    if not turns or not voiceprinting_enabled():
-        return turns
-    try:
-        identifier = SpeakerIdentifier()
-        embeddings = await identifier.extract_speaker_embeddings(audio_path, turns)
-        if not embeddings:
-            return turns
-        labels = identifier.label_speakers(embeddings, {turn.speaker for turn in turns if turn.speaker})
-        return [
-            turn.model_copy(update={"speaker": labels.get(turn.speaker, turn.speaker)})
-            for turn in turns
-        ]
-    except SpeakerIdentificationUnavailable:
-        return turns
-    except Exception:
-        logger.warning("Live speaker auto-labeling failed.", exc_info=True)
-        return turns
 
 
 @app.get("/")
@@ -274,15 +250,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
             else:
                 await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
             started = asyncio.get_running_loop().time()
-            if _live_diarization_enabled(speaker_labels_enabled):
-                try:
-                    turns = await asyncio.to_thread(transcribe_live_diarized_preview, str(wav_path), num_speakers=num_speakers)
-                except Exception:
-                    logger.warning("Live diarization failed; returning plain live caption chunk.", exc_info=True)
-                    turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
-            else:
-                turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
-            turns = await _auto_label_live_turns(str(wav_path), turns)
+            turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
             elapsed_s = asyncio.get_running_loop().time() - started
             if turns:
                 logger.info("Live caption chunk emitted: %.1fs audio, %.1fs processing, %s turn(s).", duration_s, elapsed_s, len(turns))
@@ -340,8 +308,6 @@ async def _live_transcribe_sarvam(
     chunk_seconds = max(1, int(os.getenv("SARVAM_LIVE_CHUNK_SECONDS", "2")))
     bytes_per_chunk = sample_rate * 2 * chunk_seconds
     pcm_buffer = bytearray()
-    latest_wav_path: Path | None = None
-
     async def _emit_turns(turns: list[SpeakerTurn]) -> None:
         novel_turns = []
         for turn in turns:
@@ -349,22 +315,6 @@ async def _live_transcribe_sarvam(
             if suffix:
                 last_text[turn.speaker] = turn.text
                 novel_turns.append(turn.model_copy(update={"text": suffix}))
-        if novel_turns and latest_wav_path and _live_diarization_enabled(speaker_labels_enabled):
-            diarized_turns: list[SpeakerTurn] = []
-            for turn in novel_turns:
-                try:
-                    diarized_turns.extend(
-                        await asyncio.to_thread(
-                            diarize_live_text,
-                            str(latest_wav_path),
-                            turn.text,
-                            num_speakers=num_speakers,
-                        )
-                    )
-                except Exception:
-                    logger.warning("Sarvam live text arrived, but pyannote live diarization failed.", exc_info=True)
-                    diarized_turns.append(turn)
-            novel_turns = await _auto_label_live_turns(str(latest_wav_path), diarized_turns)
         if novel_turns:
             await websocket.send_json(
                 {
@@ -385,16 +335,11 @@ async def _live_transcribe_sarvam(
             receiver_task = asyncio.create_task(_receive_from_sarvam(session))
 
             async def _flush_audio() -> None:
-                nonlocal latest_wav_path
                 if not pcm_buffer:
                     return
                 chunk = bytes(pcm_buffer)
                 pcm_buffer.clear()
                 await websocket.send_json({"type": "state", "message": "Processing Sarvam caption chunk"})
-                if _live_diarization_enabled(speaker_labels_enabled):
-                    if latest_wav_path:
-                        delete_temp_file(str(latest_wav_path))
-                    latest_wav_path = _write_pcm_wav(chunk, sample_rate, "sarvam-live")
                 await session.send_pcm(chunk)
                 await session.flush()
 
