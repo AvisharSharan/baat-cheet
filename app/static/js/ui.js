@@ -237,6 +237,7 @@ function emptyTranscriptMessage() {
 
 function refreshEmptyTranscriptMessage() {
   const msg = document.querySelector("#emptyTranscriptMsg");
+  if (msg) msg.textContent = emptyTranscriptMessage();
 }
 
 window.switchMobileTab = function(target) {

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from app.models import SpeakerTurn
 from app.services.mom import MomGenerationClient
+from app.utils import env_int
 
 
 class TranslationError(RuntimeError):
@@ -29,9 +30,9 @@ class _Piece:
 class TranscriptTranslationClient:
     def __init__(self, ai_client: MomGenerationClient | None = None) -> None:
         self.ai = ai_client or MomGenerationClient()
-        self.chunk_chars = max(500, _env_int("TRANSLATION_CHUNK_CHARS", 5000))
-        self.max_tokens = max(512, _env_int("TRANSLATION_MAX_TOKENS", 4096))
-        self.retries = max(0, _env_int("TRANSLATION_VALIDATION_RETRIES", 2))
+        self.chunk_chars = max(500, env_int("TRANSLATION_CHUNK_CHARS", 5000))
+        self.max_tokens = max(512, env_int("TRANSLATION_MAX_TOKENS", 4096))
+        self.retries = max(0, env_int("TRANSLATION_VALIDATION_RETRIES", 2))
 
     async def translate(self, transcript: list[SpeakerTurn]) -> tuple[list[SpeakerTurn], str]:
         if not transcript or not any(turn.text.strip() for turn in transcript):
@@ -205,8 +206,3 @@ def _representative_sample(transcript: list[SpeakerTurn], max_chars: int) -> str
     return "\n".join((text[:section], text[middle_start : middle_start + section], text[-section:]))
 
 
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError as exc:
-        raise TranslationError(f"{name} must be an integer.") from exc

@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.utils import env_int
 
 import asyncio
+import logging
 import os
 
 
@@ -137,9 +138,6 @@ class MomGenerationClient:
         return f"{self.base_url}/chat/completions"
 
 
-HuggingFaceGemmaMomClient = MomGenerationClient
-
-
 SYSTEM_PROMPT = """\
 You are a precise business analyst who writes Minutes of Meeting (MoM) documents.
 
@@ -183,12 +181,10 @@ def build_mom_prompt(
 
     # Warn when the transcript is likely to overflow the configured context window.
     # Rough heuristic: ~3.5 characters per token for English text.
-    import logging as _logging
-    _logger = _logging.getLogger(__name__)
     num_ctx = env_int("OLLAMA_NUM_CTX", 32768)
     estimated_tokens = len(transcript_text) / 3.5
     if estimated_tokens > num_ctx * 0.85:
-        _logger.warning(
+        logging.getLogger(__name__).warning(
             "Transcript is ~%d estimated tokens but OLLAMA_NUM_CTX=%d. "
             "The model may silently truncate the input and produce an incomplete MoM. "
             "Increase OLLAMA_NUM_CTX or use a larger-context model.",
@@ -289,16 +285,6 @@ def _mom_type_instruction(mom_type: str) -> str:
         ),
     }
     return instructions.get(normalized, instructions["auto"])
-
-
-def env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise MomGenerationError(f"{name} must be an integer.") from exc
 
 
 def _mom_model(provider: str) -> str:

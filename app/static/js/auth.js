@@ -5,7 +5,9 @@ async function bootstrapAuth() {
     return;
   }
   try {
-    const response = await apiFetch("/api/auth/me");
+    const response = await fetch("/api/auth/me", {
+      headers: { "Authorization": `Bearer ${authToken}` },
+    });
     if (!response.ok) throw new Error("Session expired");
     const user = await response.json();
     showApp(user.username);
@@ -59,12 +61,18 @@ function logout() {
 }
 
 function showLogin() {
+  const alreadyShowing = !loginView.hidden;
   document.body.classList.add("auth-pending");
   loginView.hidden = false;
   userChip.hidden = true;
   logoutBtn.hidden = true;
   setStatus("Sign in required");
-  window.setTimeout(() => loginUsername.focus(), 0);
+  // Only steal focus when the login view was not already visible AND the
+  // username field is empty — avoids jumping away from the password field
+  // when showLogin() is called re-entrantly (e.g. a background 401).
+  if (!alreadyShowing || !loginUsername.value.trim()) {
+    window.setTimeout(() => { if (!loginUsername.value.trim()) loginUsername.focus(); }, 0);
+  }
 }
 
 function showApp(username) {
@@ -79,15 +87,59 @@ function showApp(username) {
   loadHistory();
 }
 
+var _isRefreshing = false;
+var _refreshPromise = null;
+
 async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
-  const response = await fetch(url, { ...options, headers });
+  let response = await fetch(url, { ...options, headers });
+
   if (response.status === 401) {
-    authToken = "";
-    localStorage.removeItem(authTokenKey);
-    showLogin();
+    if (!loginView.hidden || url.includes("/api/auth/refresh") || url.includes("/api/auth/login")) {
+      return response;
+    }
+
+    if (!_isRefreshing) {
+      _isRefreshing = true;
+      _refreshPromise = fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${authToken}` }
+      }).then(async (res) => {
+        if (!res.ok) throw new Error("Refresh failed");
+        const data = await res.json();
+        authToken = data.access_token;
+        localStorage.setItem(authTokenKey, authToken);
+      }).catch((err) => {
+        authToken = "";
+        localStorage.removeItem(authTokenKey);
+        showLogin();
+        throw err;
+      }).finally(() => {
+        _isRefreshing = false;
+      });
+    }
+
+    try {
+      await _refreshPromise;
+      const retryHeaders = new Headers(options.headers || {});
+      retryHeaders.set("Authorization", `Bearer ${authToken}`);
+      response = await fetch(url, { ...options, headers: retryHeaders });
+    } catch (error) {
+      return response;
+    }
   }
   return response;
 }
 
+async function verifyCurrentSession() {
+  if (!authToken) return false;
+  try {
+    const response = await fetch("/api/auth/me", {
+      headers: { "Authorization": `Bearer ${authToken}` },
+    });
+    return response.ok;
+  } catch (error) {
+    return true;
+  }
+}

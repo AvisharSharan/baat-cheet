@@ -25,7 +25,7 @@ from .models import ChangePasswordRequest, MeetingCreateResponse, MeetingHistory
 from .settings_store import load_settings, save_settings
 from .services.export import markdown_to_pdf
 from .services.mom import MomGenerationClient
-from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime
+from .services.speaker_id import SpeakerIdentificationUnavailable, SpeakerIdentifier, preload_voiceprinting_runtime, voiceprinting_enabled
 from .services.transcription import SarvamLiveCaptionSession, create_transcription_client, preload_transcription_runtime, sarvam_provider_selected, transcribe_live_preview
 from .services.translation import TranscriptTranslationClient
 from .services.live_transcription import new_suffix
@@ -118,6 +118,16 @@ def _env_flag(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _query_int(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if 1 <= parsed <= 10 else None
+
+
 @app.get("/")
 async def index(request: Request) -> Response:
     return templates.TemplateResponse("index.html", {"request": request})
@@ -205,8 +215,10 @@ async def live_transcribe(websocket: WebSocket) -> None:
     await websocket.accept()
     sample_rate = int(websocket.query_params.get("sample_rate", "16000"))
     chunk_seconds = int(websocket.query_params.get("chunk_seconds", os.getenv("LOCAL_LIVE_CHUNK_SECONDS", "5")))
+    speaker_labels_enabled = websocket.query_params.get("speaker_labels_enabled", "1").strip().lower() not in {"0", "false", "no", "off"}
+    num_speakers = _query_int(websocket.query_params.get("num_speakers"))
     if sarvam_provider_selected():
-        await _live_transcribe_sarvam(websocket, sample_rate)
+        await _live_transcribe_sarvam(websocket, sample_rate, speaker_labels_enabled=speaker_labels_enabled, num_speakers=num_speakers)
         return
 
     bytes_per_chunk = sample_rate * 2 * max(1, chunk_seconds)
@@ -238,10 +250,7 @@ async def live_transcribe(websocket: WebSocket) -> None:
             else:
                 await websocket.send_json({"type": "state", "message": "Processing caption chunk"})
             started = asyncio.get_running_loop().time()
-            turns = await asyncio.to_thread(
-                transcribe_live_preview,
-                str(wav_path),
-            )
+            turns = await asyncio.to_thread(transcribe_live_preview, str(wav_path))
             elapsed_s = asyncio.get_running_loop().time() - started
             if turns:
                 logger.info("Live caption chunk emitted: %.1fs audio, %.1fs processing, %s turn(s).", duration_s, elapsed_s, len(turns))
@@ -287,13 +296,18 @@ async def live_transcribe(websocket: WebSocket) -> None:
             pass
 
 
-async def _live_transcribe_sarvam(websocket: WebSocket, sample_rate: int) -> None:
+async def _live_transcribe_sarvam(
+    websocket: WebSocket,
+    sample_rate: int,
+    *,
+    speaker_labels_enabled: bool,
+    num_speakers: int | None,
+) -> None:
     last_text: dict[str, str] = {}
     stop_event = asyncio.Event()
     chunk_seconds = max(1, int(os.getenv("SARVAM_LIVE_CHUNK_SECONDS", "2")))
     bytes_per_chunk = sample_rate * 2 * chunk_seconds
     pcm_buffer = bytearray()
-
     async def _emit_turns(turns: list[SpeakerTurn]) -> None:
         novel_turns = []
         for turn in turns:
@@ -357,6 +371,8 @@ async def _live_transcribe_sarvam(websocket: WebSocket, sample_rate: int) -> Non
         except Exception:
             pass
     finally:
+        if latest_wav_path:
+            delete_temp_file(str(latest_wav_path))
         try:
             await websocket.close()
         except Exception:

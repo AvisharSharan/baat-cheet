@@ -40,8 +40,8 @@ class MeetingStore:
         with self._lock:
             if meeting.id not in self._meetings:
                 raise KeyError(meeting.id)
-            meeting.updated_at = datetime.now(timezone.utc)
-            self._meetings[meeting.id] = meeting.model_copy(deep=True)
+            updated = meeting.model_copy(update={"updated_at": datetime.now(timezone.utc)}, deep=True)
+            self._meetings[meeting.id] = updated
             self._save()
 
     def delete(self, meeting_id: str) -> MeetingState:

@@ -395,29 +395,6 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right))
 
 
-def _best_embedding_match(embedding: list[float] | None, candidates: dict[str, list[float]]) -> SpeakerMatch | None:
-    if not embedding:
-        return None
-    best: SpeakerMatch | None = None
-    for label, candidate_embedding in candidates.items():
-        score = _cosine_similarity(embedding, candidate_embedding)
-        if best is None or score > best.score:
-            best = SpeakerMatch(label=label, score=score)
-    return best
-
-
-def unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
-    for attempt in range(attempts):
-        try:
-            path.unlink(missing_ok=True)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                return
-            time.sleep(delay_s)
-        except OSError:
-            return
-
 
 def _env_float(name: str, default: float) -> float:
     value = os.getenv(name)
@@ -428,15 +405,6 @@ def _env_float(name: str, default: float) -> float:
     except ValueError:
         return default
 
-
-def env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
 
 
 def voiceprinting_enabled() -> bool:

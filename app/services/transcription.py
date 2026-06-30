@@ -47,6 +47,7 @@ _WHISPER_MODEL_CACHE: dict[str, Any] = {}
 _INDIC_CONFORMER_MODEL_CACHE: dict[str, Any] = {}
 _WHISPER_MODEL_LOCK = RLock()
 _INDIC_CONFORMER_MODEL_LOCK = RLock()
+_PYANNOTE_PIPELINE_LOCK = RLock()
 _INDIC_CONFORMER_LANGUAGES = {
     "as",
     "bn",
@@ -596,7 +597,13 @@ def _transcribe_with_indic_conformer(
 
 
 def _run_indic_conformer_model(model: Any, waveform: Any, language: str, decoder: str, torch: Any) -> Any:
-    with torch.inference_mode():
+    # Use no_grad() instead of inference_mode() due to TorchScript autograd issues,
+    # and disable JIT optimizations to prevent "default_program" NvFuser compilation errors 
+    # that often occur in PyTorch 2.x when running Indic Conformer.
+    with torch.no_grad():
+        if hasattr(torch.jit, "optimized_execution"):
+            with torch.jit.optimized_execution(False):
+                return model(waveform, language, decoder)
         return model(waveform, language, decoder)
 
 
@@ -693,8 +700,18 @@ def transcribe_live_preview(
     audio_path: str,
 ) -> list[SpeakerTurn]:
     if _live_preview_uses_indic():
-        return transcribe_indic_live_preview(audio_path)
+        try:
+            return transcribe_indic_live_preview(audio_path)
+        except TranscriptionError as exc:
+            if not _should_fallback_from_indic_live(exc):
+                raise
+            logger.warning("Indic live preview failed; falling back to faster-whisper live preview: %s", _short_error(exc))
+            return _transcribe_faster_whisper_live_preview(audio_path)
 
+    return _transcribe_faster_whisper_live_preview(audio_path)
+
+
+def _transcribe_faster_whisper_live_preview(audio_path: str) -> list[SpeakerTurn]:
     model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
@@ -729,6 +746,7 @@ def transcribe_live_preview(
     ]
 
 
+
 def transcribe_indic_live_preview(audio_path: str) -> list[SpeakerTurn]:
     client = IndicConformerPyannoteTranscriptionClient(
         decoder=os.getenv("LIVE_INDIC_CONFORMER_DECODER", "ctc"),
@@ -744,6 +762,13 @@ def transcribe_indic_live_preview(audio_path: str) -> list[SpeakerTurn]:
     if not text.strip():
         return []
     return [SpeakerTurn(speaker="Live", text=text.strip(), start_ms=0, end_ms=duration_ms)]
+
+
+def _should_fallback_from_indic_live(exc: TranscriptionError) -> bool:
+    if os.getenv("LIVE_INDIC_FALLBACK_TO_WHISPER", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    message = str(exc).lower()
+    return "torchscript/onnx runtime" in message or "did not return transcript text" not in message
 
 
 def _is_usable_live_segment(segment: Any) -> bool:
@@ -869,37 +894,38 @@ def _get_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | No
     requested_device = os.getenv("PYANNOTE_DEVICE", "cpu")
     requested_checkpoint = "pyannote/speaker-diarization-community-1"
     cache_key = f"{requested_checkpoint}|{token or ''}|{requested_device}|{id(pipeline_class)}"
-    if cache_key in _PYANNOTE_PIPELINE_CACHE:
-        return _PYANNOTE_PIPELINE_CACHE[cache_key]
-        
-    _PYANNOTE_PIPELINE_CACHE.clear()
+    with _PYANNOTE_PIPELINE_LOCK:
+        if cache_key in _PYANNOTE_PIPELINE_CACHE:
+            return _PYANNOTE_PIPELINE_CACHE[cache_key]
+            
+        _PYANNOTE_PIPELINE_CACHE.clear()
 
-    try:
-        pipeline = _load_pyannote_pipeline(pipeline_class, requested_checkpoint, token)
-    except Exception as exc:
-        if "$model/segmentation" in str(exc):
-            raise TranscriptionError(
-                "pyannote/speaker-diarization-community-1 requires a newer compatible pyannote.audio install. "
-                "Run: python -m pip install -U \"pyannote.audio>=4.0.0,<5.0\" \"huggingface_hub>=0.24,<1.0\""
-            ) from exc
-        raise
-    if pipeline is None:
-        raise TranscriptionError(
-            f"Could not load pyannote pipeline '{requested_checkpoint}'. Check HF_TOKEN, model access, and pyannote/huggingface_hub versions."
-        )
-    device = requested_device.strip().lower()
-    if device and device != "cpu" and hasattr(pipeline, "to"):
         try:
-            import torch
-
-            pipeline.to(torch.device(device))
+            pipeline = _load_pyannote_pipeline(pipeline_class, requested_checkpoint, token)
         except Exception as exc:
-            if _is_cuda_runtime_error(exc):
-                logger.warning("Could not move pyannote pipeline to %s; using CPU instead.", device)
-            else:
-                raise TranscriptionError(f"Could not move pyannote pipeline to {device}.") from exc
-    _PYANNOTE_PIPELINE_CACHE[cache_key] = pipeline
-    return pipeline
+            if "$model/segmentation" in str(exc):
+                raise TranscriptionError(
+                    "pyannote/speaker-diarization-community-1 requires a newer compatible pyannote.audio install. "
+                    "Run: python -m pip install -U \"pyannote.audio>=4.0.0,<5.0\" \"huggingface_hub>=0.24,<1.0\""
+                ) from exc
+            raise
+        if pipeline is None:
+            raise TranscriptionError(
+                f"Could not load pyannote pipeline '{requested_checkpoint}'. Check HF_TOKEN, model access, and pyannote/huggingface_hub versions."
+            )
+        device = requested_device.strip().lower()
+        if device and device != "cpu" and hasattr(pipeline, "to"):
+            try:
+                import torch
+
+                pipeline.to(torch.device(device))
+            except Exception as exc:
+                if _is_cuda_runtime_error(exc):
+                    logger.warning("Could not move pyannote pipeline to %s; using CPU instead.", device)
+                else:
+                    raise TranscriptionError(f"Could not move pyannote pipeline to {device}.") from exc
+        _PYANNOTE_PIPELINE_CACHE[cache_key] = pipeline
+        return pipeline
 
 
 def _load_pyannote_pipeline(pipeline_class: Any, checkpoint: str, token: str | None = None) -> Any:
@@ -982,19 +1008,6 @@ def _pcm_to_wav_base64(pcm_bytes: bytes, sample_rate: int) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def unlink_with_retry(path: Path, attempts: int = 5, delay_s: float = 0.25) -> None:
-    for attempt in range(attempts):
-        try:
-            path.unlink(missing_ok=True)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                logger.warning("Could not delete temporary audio file %s; it may still be in use.", path, exc_info=True)
-                return
-            time.sleep(delay_s)
-        except OSError:
-            logger.warning("Could not delete temporary audio file %s.", path, exc_info=True)
-            return
 
 
 def _pyannote_audio_input(audio_path: str, sample_rate: int = 16000) -> dict[str, Any]:
