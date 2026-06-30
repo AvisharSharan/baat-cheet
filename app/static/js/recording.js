@@ -304,6 +304,9 @@ async function uploadMeetingFile(file, filename) {
 async function pollStatus() {
   if (!meetingId) return;
   const response = await apiFetch(`/api/meetings/${meetingId}/status`);
+  // Skip rendering on error responses (401, 404, 5xx) — a transient server
+  // hiccup during a long AI task must not corrupt UI state or trigger logout.
+  if (!response.ok) return;
   const data = await response.json();
   renderState(data);
   const voiceprintsStillRunning = data.status === "transcribed" && ["pending", "processing"].includes(data.voiceprint_status);

@@ -5,7 +5,9 @@ async function bootstrapAuth() {
     return;
   }
   try {
-    const response = await apiFetch("/api/auth/me");
+    const response = await fetch("/api/auth/me", {
+      headers: { "Authorization": `Bearer ${authToken}` },
+    });
     if (!response.ok) throw new Error("Session expired");
     const user = await response.json();
     showApp(user.username);
@@ -59,12 +61,18 @@ function logout() {
 }
 
 function showLogin() {
+  const alreadyShowing = !loginView.hidden;
   document.body.classList.add("auth-pending");
   loginView.hidden = false;
   userChip.hidden = true;
   logoutBtn.hidden = true;
   setStatus("Sign in required");
-  window.setTimeout(() => loginUsername.focus(), 0);
+  // Only steal focus when the login view was not already visible AND the
+  // username field is empty — avoids jumping away from the password field
+  // when showLogin() is called re-entrantly (e.g. a background 401).
+  if (!alreadyShowing || !loginUsername.value.trim()) {
+    window.setTimeout(() => { if (!loginUsername.value.trim()) loginUsername.focus(); }, 0);
+  }
 }
 
 function showApp(username) {
@@ -79,15 +87,49 @@ function showApp(username) {
   loadHistory();
 }
 
+// Count consecutive 401s from background calls before deciding to log out.
+// A single transient 401 (server busy, momentary restart) must not boot the user.
+var _consecutiveAuthFailures = 0;
+var _AUTH_FAILURE_THRESHOLD = 3;
+
 async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401) {
-    authToken = "";
-    localStorage.removeItem(authTokenKey);
-    showLogin();
+    // Already on the login screen — don't disrupt typing.
+    if (!loginView.hidden) return response;
+
+    _consecutiveAuthFailures += 1;
+    if (_consecutiveAuthFailures >= _AUTH_FAILURE_THRESHOLD) {
+      // Multiple consecutive 401s — confirm the session is truly gone.
+      const stillAuthenticated = await verifyCurrentSession();
+      if (!stillAuthenticated) {
+        _consecutiveAuthFailures = 0;
+        authToken = "";
+        localStorage.removeItem(authTokenKey);
+        showLogin();
+      } else {
+        // verifyCurrentSession says we're fine — transient issue, reset counter.
+        _consecutiveAuthFailures = 0;
+      }
+    }
+    // Return the raw 401 response so callers can handle it (e.g. skip rendering).
+    return response;
   }
+  // Successful response — reset the failure counter.
+  _consecutiveAuthFailures = 0;
   return response;
 }
 
+async function verifyCurrentSession() {
+  if (!authToken) return false;
+  try {
+    const response = await fetch("/api/auth/me", {
+      headers: { "Authorization": `Bearer ${authToken}` },
+    });
+    return response.ok;
+  } catch (error) {
+    return true;
+  }
+}

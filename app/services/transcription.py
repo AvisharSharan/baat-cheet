@@ -693,8 +693,18 @@ def transcribe_live_preview(
     audio_path: str,
 ) -> list[SpeakerTurn]:
     if _live_preview_uses_indic():
-        return transcribe_indic_live_preview(audio_path)
+        try:
+            return transcribe_indic_live_preview(audio_path)
+        except TranscriptionError as exc:
+            if not _should_fallback_from_indic_live(exc):
+                raise
+            logger.warning("Indic live preview failed; falling back to faster-whisper live preview: %s", _short_error(exc))
+            return _transcribe_faster_whisper_live_preview(audio_path)
 
+    return _transcribe_faster_whisper_live_preview(audio_path)
+
+
+def _transcribe_faster_whisper_live_preview(audio_path: str) -> list[SpeakerTurn]:
     model_name = os.getenv("LIVE_WHISPER_MODEL") or "tiny"
     device = os.getenv("LIVE_WHISPER_DEVICE", "cpu")
     compute_type = os.getenv("LIVE_WHISPER_COMPUTE_TYPE", "int8")
@@ -729,6 +739,57 @@ def transcribe_live_preview(
     ]
 
 
+def transcribe_live_diarized_preview(
+    audio_path: str,
+    *,
+    num_speakers: int | None = None,
+) -> list[SpeakerTurn]:
+    if _live_preview_uses_indic():
+        try:
+            text_turns = transcribe_indic_live_preview(audio_path)
+        except TranscriptionError as exc:
+            if not _should_fallback_from_indic_live(exc):
+                raise
+            logger.warning("Indic diarized live preview failed; falling back to faster-whisper live diarization: %s", _short_error(exc))
+            return _transcribe_faster_whisper_diarized_live_preview(audio_path, num_speakers=num_speakers)
+        if not text_turns:
+            return []
+        return diarize_live_text(
+            audio_path,
+            text_turns[0].text,
+            num_speakers=num_speakers,
+            duration_ms=text_turns[0].end_ms,
+        )
+
+    return _transcribe_faster_whisper_diarized_live_preview(audio_path, num_speakers=num_speakers)
+
+
+def _transcribe_faster_whisper_diarized_live_preview(
+    audio_path: str,
+    *,
+    num_speakers: int | None = None,
+) -> list[SpeakerTurn]:
+    client = FasterWhisperPyannoteTranscriptionClient()
+    segments = client._transcribe_with_faster_whisper(audio_path)
+    diarization = client._diarize_with_pyannote(audio_path, num_speakers)
+    return _assign_speakers_to_segments(segments, diarization)
+
+
+def diarize_live_text(
+    audio_path: str,
+    text: str,
+    *,
+    num_speakers: int | None = None,
+    duration_ms: int | None = None,
+) -> list[SpeakerTurn]:
+    text = text.strip()
+    if not text:
+        return []
+    client = FasterWhisperPyannoteTranscriptionClient()
+    diarization = client._diarize_with_pyannote(audio_path, num_speakers)
+    return _assign_text_to_diarization(text, diarization, duration_ms or _wav_duration_ms(audio_path), expected_speakers=num_speakers)
+
+
 def transcribe_indic_live_preview(audio_path: str) -> list[SpeakerTurn]:
     client = IndicConformerPyannoteTranscriptionClient(
         decoder=os.getenv("LIVE_INDIC_CONFORMER_DECODER", "ctc"),
@@ -744,6 +805,13 @@ def transcribe_indic_live_preview(audio_path: str) -> list[SpeakerTurn]:
     if not text.strip():
         return []
     return [SpeakerTurn(speaker="Live", text=text.strip(), start_ms=0, end_ms=duration_ms)]
+
+
+def _should_fallback_from_indic_live(exc: TranscriptionError) -> bool:
+    if os.getenv("LIVE_INDIC_FALLBACK_TO_WHISPER", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    message = str(exc).lower()
+    return "torchscript/onnx runtime" in message or "did not return transcript text" not in message
 
 
 def _is_usable_live_segment(segment: Any) -> bool:
